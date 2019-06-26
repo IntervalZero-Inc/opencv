@@ -8,7 +8,7 @@
 #include "../test_precomp.hpp"
 
 #include "../common/gapi_imgproc_tests.hpp"
-#include "opencv2/gapi/cpu/imgproc.hpp"
+#include <opencv2/gapi/cpu/imgproc.hpp>
 
 #define IMGPROC_CPU cv::gapi::imgproc::cpu::kernels()
 
@@ -153,6 +153,30 @@ INSTANTIATE_TEST_CASE_P(SobelTestCPU32F, SobelTest,
 /*init output matrices or not*/ testing::Bool(),
                                 Values(cv::compile_args(IMGPROC_CPU))));
 
+INSTANTIATE_TEST_CASE_P(SobelXYTestCPU, SobelXYTest,
+                        Combine(Values(AbsExact().to_compare_f()),
+                                Values(CV_8UC1, CV_8UC3, CV_16UC1, CV_16SC1),
+                                Values(3, 5),
+                                Values(cv::Size(1280, 720),
+                                       cv::Size(640, 480)),
+                                Values(-1, CV_16S, CV_32F),
+                                Values(1, 2),
+                                Values(BORDER_CONSTANT, BORDER_REPLICATE, BORDER_REFLECT),
+                                Values(0, 1, 255),
+                                Values(cv::compile_args(IMGPROC_CPU))));
+
+INSTANTIATE_TEST_CASE_P(SobelXYTestCPU32F, SobelXYTest,
+                        Combine(Values(AbsExact().to_compare_f()),
+                                Values(CV_32FC1),
+                                Values(3, 5),
+                                Values(cv::Size(1280, 720),
+                                       cv::Size(640, 480)),
+                                Values(CV_32F),
+                                Values(1, 2),
+                                Values(BORDER_CONSTANT, BORDER_REPLICATE, BORDER_REFLECT),
+                                Values(0, 1, 255),
+                                Values(cv::compile_args(IMGPROC_CPU))));
+
 INSTANTIATE_TEST_CASE_P(EqHistTestCPU, EqHistTest,
                         Combine(Values(AbsExact().to_compare_f()),
                                 Values(cv::Size(1280, 720),
@@ -200,6 +224,18 @@ INSTANTIATE_TEST_CASE_P(YUV2RGBTestCPU, YUV2RGBTest,
                             /*init output matrices or not*/ testing::Bool(),
                                 Values(cv::compile_args(IMGPROC_CPU))));
 
+INSTANTIATE_TEST_CASE_P(NV12toRGBTestCPU, NV12toRGBTest,
+                        Combine(Values(AbsExact().to_compare_f()),
+                                Values(cv::Size(1280, 720),
+                                       cv::Size(640, 480)),
+                                Values(cv::compile_args(IMGPROC_CPU))));
+
+INSTANTIATE_TEST_CASE_P(NV12toBGRTestCPU, NV12toBGRTest,
+                        Combine(Values(AbsExact().to_compare_f()),
+                                Values(cv::Size(1280, 720),
+                                       cv::Size(640, 480)),
+                                Values(cv::compile_args(IMGPROC_CPU))));
+
 INSTANTIATE_TEST_CASE_P(RGB2LabTestCPU, RGB2LabTest,
                         Combine(Values(AbsExact().to_compare_f()),
                                 Values(cv::Size(1280, 720),
@@ -235,4 +271,24 @@ INSTANTIATE_TEST_CASE_P(YUV2BGRTestCPU, YUV2BGRTest,
 /*init output matrices or not*/ testing::Bool(),
                                 Values(cv::compile_args(IMGPROC_CPU))));
 
+INSTANTIATE_TEST_CASE_P(RGB2HSVTestCPU, RGB2HSVTest,
+                        Combine(Values(AbsExact().to_compare_f()),
+                                Values(cv::Size(1280, 720),
+                                       cv::Size(640, 480)),
+/*init output matrices or not*/ testing::Bool(),
+                                Values(cv::compile_args(IMGPROC_CPU))));
+
+INSTANTIATE_TEST_CASE_P(BayerGR2RGBTestCPU, BayerGR2RGBTest,
+                        Combine(Values(AbsExact().to_compare_f()),
+                                Values(cv::Size(1280, 720),
+                                       cv::Size(640, 480)),
+/*init output matrices or not*/ testing::Bool(),
+                                Values(cv::compile_args(IMGPROC_CPU))));
+
+INSTANTIATE_TEST_CASE_P(RGB2YUV422TestCPU, RGB2YUV422Test,
+                        Combine(Values(AbsTolerance(1).to_compare_f()),
+                                Values(cv::Size(1280, 720),
+                                       cv::Size(640, 480)),
+/*init output matrices or not*/ testing::Bool(),
+                                Values(cv::compile_args(IMGPROC_CPU))));
 } // opencv_test

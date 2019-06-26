@@ -45,7 +45,9 @@ void OpBase::initVulkanThing(int buffer_num)
 
 void OpBase::createDescriptorSetLayout(int buffer_num)
 {
-    VkDescriptorSetLayoutBinding bindings[buffer_num] = {};
+    if (buffer_num <= 0)
+        return;
+    std::vector<VkDescriptorSetLayoutBinding> bindings(buffer_num);
     for (int i = 0; i < buffer_num; i++)
     {
         bindings[i].binding = i;
@@ -56,7 +58,7 @@ void OpBase::createDescriptorSetLayout(int buffer_num)
     VkDescriptorSetLayoutCreateInfo info = {};
     info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     info.bindingCount = buffer_num;
-    info.pBindings = bindings;
+    info.pBindings = &bindings[0];
     VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device_, &info, NULL, &descriptor_set_layout_));
 }
 
@@ -101,7 +103,7 @@ void OpBase::createShaderModule(const uint32_t* spv, size_t sz, const std::strin
     VK_CHECK_RESULT(vkCreateShaderModule(device_, &create_info, NULL, &module_));
 }
 
-void OpBase::createPipeline(size_t push_constants_size)
+void OpBase::createPipeline(size_t push_constants_size, VkSpecializationInfo* specialization_info)
 {
     // create pipeline
     VkPipelineShaderStageCreateInfo stage_create_info = {};
@@ -109,6 +111,7 @@ void OpBase::createPipeline(size_t push_constants_size)
     stage_create_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     stage_create_info.module = module_;
     stage_create_info.pName = "main";
+    stage_create_info.pSpecializationInfo = specialization_info;
     VkPushConstantRange push_constant_ranges[1] = {};
     push_constant_ranges[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     push_constant_ranges[0].offset = 0;

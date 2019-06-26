@@ -2,7 +2,7 @@
 // It is subject to the license terms in the LICENSE file found in the top-level directory
 // of this distribution and at http://opencv.org/license.html.
 //
-// Copyright (C) 2018 Intel Corporation
+// Copyright (C) 2018-2019 Intel Corporation
 
 
 #ifndef OPENCV_GAPI_FLUID_KERNEL_HPP
@@ -49,7 +49,8 @@ public:
     enum class Kind
     {
         Filter,
-        Resize
+        Resize,
+        NV12toRGB
     };
 
     // This function is a generic "doWork" callback
@@ -274,7 +275,7 @@ struct FluidCallHelper<Impl, std::tuple<Ins...>, std::tuple<Outs...>, UseScratch
 
 
 template<class Impl, class K, bool UseScratch>
-class GFluidKernelImpl
+class GFluidKernelImpl : public cv::detail::KernelTag
 {
     static const int LPI = 1;
     static const auto Kind = GFluidKernel::Kind::Filter;

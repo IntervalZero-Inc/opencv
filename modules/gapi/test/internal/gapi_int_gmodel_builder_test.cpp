@@ -5,11 +5,11 @@
 // Copyright (C) 2018 Intel Corporation
 
 
-#include "test_precomp.hpp"
+#include "../test_precomp.hpp"
 
 #include <ade/util/zip_range.hpp>   // util::indexed
 
-#include "opencv2/gapi/gkernel.hpp"
+#include <opencv2/gapi/gkernel.hpp>
 #include "compiler/gmodelbuilder.hpp"
 #include "compiler/gmodel.hpp" // RcDesc, GModel::init
 
