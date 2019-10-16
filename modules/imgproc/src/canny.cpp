@@ -361,7 +361,7 @@ public:
 
         Mat dx, dy;
         AutoBuffer<short> dxMax(0), dyMax(0);
-        std::deque<uchar*> stack, borderPeaksLocal;
+        std::vector<uchar*> stack, borderPeaksLocal;
         const int rowStart = max(0, boundaries.start - 1), rowEnd = min(src.rows, boundaries.end + 1);
         int *_mag_p, *_mag_a, *_mag_n;
         short *_dx, *_dy, *_dx_a = NULL, *_dy_a = NULL, *_dx_n = NULL, *_dy_n = NULL;
