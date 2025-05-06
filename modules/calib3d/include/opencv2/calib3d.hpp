@@ -549,7 +549,7 @@ can be found in:
 @note Useful information on SE(3) and Lie Groups can be found in:
     - A tutorial on SE(3) transformation parameterizations and on-manifold optimization, Jose-Luis Blanco @cite blanco2010tutorial
     - Lie Groups for 2D and 3D Transformation, Ethan Eade @cite Eade17
-    - A micro Lie theory for state estimation in robotics, Joan Solà, Jérémie Deray, Dinesh Atchuthan @cite Sol2018AML
+    - A micro Lie theory for state estimation in robotics, Joan Sola, Jeremie Deray, Dinesh Atchuthan @cite Sol2018AML
  */
 CV_EXPORTS_W void Rodrigues( InputArray src, OutputArray dst, OutputArray jacobian = noArray() );
 

@@ -58,14 +58,19 @@ macro(ocv_lapack_check)
     string(REPLACE ";" "\n" _lapack_content "${_lapack_content}")
     ocv_update_file("${CBLAS_H_PROXY_PATH}" "${_lapack_content}")
 
-    try_compile(__VALID_LAPACK
-        "${OpenCV_BINARY_DIR}"
-        "${OpenCV_SOURCE_DIR}/cmake/checks/lapack_check.cpp"
-        CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${LAPACK_INCLUDE_DIR}\;${CMAKE_BINARY_DIR}"
-                    "-DLINK_DIRECTORIES:STRING=${LAPACK_LINK_LIBRARIES}"
-                    "-DLINK_LIBRARIES:STRING=${LAPACK_LIBRARIES}"
-        OUTPUT_VARIABLE TRY_OUT
-    )
+    if(!RTX64)
+      try_compile(__VALID_LAPACK
+          "${OpenCV_BINARY_DIR}"
+          "${OpenCV_SOURCE_DIR}/cmake/checks/lapack_check.cpp"
+          CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${LAPACK_INCLUDE_DIR}\;${CMAKE_BINARY_DIR}"
+                      "-DLINK_DIRECTORIES:STRING=${LAPACK_LINK_LIBRARIES}"
+                      "-DLINK_LIBRARIES:STRING=${LAPACK_LIBRARIES}"
+          OUTPUT_VARIABLE TRY_OUT
+      )
+    else()
+      set(__VALID_LAPACK 1)  
+    endif()
+    
     if(NOT __VALID_LAPACK)
       #message(FATAL_ERROR "LAPACK: check build log:\n${TRY_OUT}")
       message(STATUS "LAPACK(${LAPACK_IMPL}): Can't build LAPACK check code. This LAPACK version is not supported.")

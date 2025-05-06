@@ -264,7 +264,7 @@ endif()
 # ----------------------------------------------------------------------------
 
 OCV_OPTION(OPENCV_ENABLE_NONFREE "Enable non-free algorithms" OFF)
-OCV_OPTION(WITH_RTX64_GIGE       "Include RTX64 support for GigE camers"           OFF  )
+OCV_OPTION(WITH_RTX64_GIGE       "Include RTX64 support for GigE camers"           OFF)
 
 # 3rd party libs
 OCV_OPTION(OPENCV_FORCE_3RDPARTY_BUILD   "Force using 3rdparty code from source" OFF)
@@ -558,7 +558,7 @@ OCV_OPTION(GENERATE_ABI_DESCRIPTOR    "Generate XML file for abi_compliance_chec
 OCV_OPTION(OPENCV_GENERATE_PKGCONFIG  "Generate .pc file for pkg-config build tool (deprecated)" ON IF (UNIX AND NOT MSVC AND NOT IOS AND NOT ANDROID) )
 OCV_OPTION(CV_ENABLE_INTRINSICS       "Use intrinsic-based optimized code" ON )
 OCV_OPTION(CV_DISABLE_OPTIMIZATION    "Disable explicit optimized code (dispatched code/intrinsics/loop unrolling/etc)" OFF )
-OCV_OPTION(CV_TRACE                   "Enable OpenCV code trace" ON)
+OCV_OPTION(CV_TRACE                   "Enable OpenCV code trace" NOT RTX64)
 OCV_OPTION(OPENCV_GENERATE_SETUPVARS  "Generate setup_vars* scripts" ON IF (NOT ANDROID AND NOT APPLE_FRAMEWORK) )
 OCV_OPTION(ENABLE_CONFIG_VERIFICATION "Fail build if actual configuration doesn't match requested (WITH_XXX != HAVE_XXX)" OFF)
 OCV_OPTION(OPENCV_ENABLE_MEMALIGN     "Enable posix_memalign or memalign usage" ON)
