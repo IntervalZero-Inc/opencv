@@ -70,6 +70,11 @@
 #include <ctype.h>
 #include <assert.h>  // FIXIT remove this
 
+#ifdef UNDER_RTSS
+#include <SDKDDKVer.h>
+#include <ws2tcpip.h>
+#endif
+
 #if defined _WIN32 || defined WINCE
     #if !defined _WIN32_WINNT
         #ifdef HAVE_MSMF
@@ -89,6 +94,13 @@
 #define __BEGIN__ __CV_BEGIN__
 #define __END__  __CV_END__
 #define EXIT __CV_EXIT__
+
+#ifdef UNDER_RTSS
+#include <tchar.h>
+#include <rtapi.h>    // RTX64 APIs that can be used in real-time and Windows applications.
+#include <rtssapi.h>  // RTX64 APIs that can only be used in real-time applications.
+#endif
+
 
 /***************************** CvCapture structure ******************************/
 
@@ -212,6 +224,8 @@ namespace cv
     Ptr<IVideoCapture> cvCreateCapture_MSMF(int index);
     Ptr<IVideoCapture> cvCreateCapture_MSMF(const String& filename);
     Ptr<IVideoWriter> cvCreateVideoWriter_MSMF(const String& filename, int fourcc, double fps, Size frameSize, int is_color);
+
+    Ptr<IVideoCapture> createCameraCapture_Rtx64GigE(int index);
 }
 
 #endif /* __VIDEOIO_H_ */

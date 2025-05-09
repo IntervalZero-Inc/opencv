@@ -119,6 +119,7 @@ enum VideoCaptureAPIs {
        CAP_OPENCV_MJPEG = 2200,         //!< Built-in OpenCV MotionJPEG codec
        CAP_INTEL_MFX    = 2300,         //!< Intel MediaSDK
        CAP_XINE         = 2400,         //!< XINE engine (Linux)
+       CAP_RTX64_GIGE   = 2500,         //!< IntervalZero RTX64 GigE driver
      };
 
 /** @brief %VideoCapture generic properties identifier.
@@ -628,7 +629,7 @@ public:
     destructor.
      */
     CV_WRAP VideoCapture();
-
+  #ifndef UNDER_RTSS
     /** @overload
     @brief  Open video file or image file sequence or a capturing device or a IP video stream for video capturing
 
@@ -652,7 +653,7 @@ public:
     @sa cv::VideoCaptureAPIs
     */
     CV_WRAP VideoCapture(const String& filename, int apiPreference);
-
+#endif
     /** @overload
     @brief  Open a camera for video capturing
 
@@ -681,7 +682,7 @@ public:
     The method first calls VideoCapture::release to close the already opened file or camera.
     */
     virtual ~VideoCapture();
-
+#ifndef UNDER_RTSS
     /** @brief  Open video file or a capturing device or a IP video stream for video capturing
 
     @overload
@@ -692,7 +693,7 @@ public:
     The method first calls VideoCapture::release to close the already opened file or camera.
      */
     CV_WRAP virtual bool open(const String& filename);
-
+#endif
     /** @brief  Open a camera for video capturing
 
     @overload
@@ -824,7 +825,7 @@ public:
 
     */
     CV_WRAP virtual double get(int propId) const;
-
+  #ifndef UNDER_RTSS
     /** @brief Open video file or a capturing device or a IP video stream for video capturing with API Preference
 
     @overload
@@ -835,7 +836,7 @@ public:
     The method first calls VideoCapture::release to close the already opened file or camera.
     */
     CV_WRAP virtual bool open(const String& filename, int apiPreference);
-
+  #endif
     /** @brief Returns used backend API name
 
      @note Stream should be opened.

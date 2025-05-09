@@ -81,8 +81,10 @@
     #define HAVE_GCD
 #endif
 
+#ifndef UNDER_RTSS
 #if defined _MSC_VER && _MSC_VER >= 1600
     #define HAVE_CONCURRENCY
+#endif
 #endif
 
 /* IMPORTANT: always use the same order of defines
@@ -643,6 +645,8 @@ unsigned defaultNumberOfThreads()
     // many modern phones/tables have 4-core CPUs. Let's use no more
     // than 2 threads by default not to overheat the devices
     const unsigned int default_number_of_threads = 2;
+#elif UNDER_RTSS
+    constexpr unsigned int default_number_of_threads = 1;
 #else
     const unsigned int default_number_of_threads = (unsigned int)std::max(1, cv::getNumberOfCPUs());
 #endif
@@ -864,7 +868,7 @@ int getNumberOfCPUs_()
     unsigned ncpus = 0; /* 0 means we have to find out some other way */
 #endif
 
-#if defined _WIN32
+#if (defined _WIN32) && (!defined(UNDER_RTSS))
 
     SYSTEM_INFO sysinfo = {};
 #if (defined(_M_ARM) || defined(_M_ARM64) || defined(_M_X64) || defined(WINRT)) && _WIN32_WINNT >= 0x501
