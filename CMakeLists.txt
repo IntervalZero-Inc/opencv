@@ -932,8 +932,8 @@ ocv_add_modules_compiler_options()
 # OpenCV modules
 add_subdirectory(modules)
 
-# Generate targets for documentation
-add_subdirectory(doc)
+# Generate targets for documentation (Commented out since we don't build doc for rtss)
+# add_subdirectory(doc)
 
 # various data that is used by cv libraries and/or demo applications.
 add_subdirectory(data)
