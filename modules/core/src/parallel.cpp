@@ -69,6 +69,10 @@
     #endif
 #endif
 
+#ifdef UNDER_RTSS
+#undef CV_CXX11
+#endif
+
 #if defined CV_CXX11
     #include <thread>
 #endif
