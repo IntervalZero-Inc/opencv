@@ -1,7 +1,14 @@
 Periodic Noise Removing Filter {#tutorial_periodic_noise_removing_filter}
 ==========================
 
+@tableofcontents
+
 @prev_tutorial{tutorial_anisotropic_image_segmentation_by_a_gst}
+
+|    |    |
+| -: | :- |
+| Original author | Karpushin Vladislav |
+| Compatibility | OpenCV >= 3.0 |
 
 Goal
 ----
@@ -13,7 +20,7 @@ In this tutorial you will learn:
 Theory
 ------
 
-@note The explanation is based on the book @cite gonzalez. The image on this page is a real world image.
+@note The explanation is based on the book @cite Gonzalez1987. The image on this page is a real world image.
 
 Periodic noise produces spikes in the Fourier domain that can often be detected by visual analysis.
 

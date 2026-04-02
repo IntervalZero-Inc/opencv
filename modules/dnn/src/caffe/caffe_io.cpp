@@ -92,6 +92,7 @@
 #ifdef HAVE_PROTOBUF
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/stubs/common.h>
 #include <google/protobuf/text_format.h>
 
 #include <opencv2/core.hpp>
@@ -100,6 +101,7 @@
 #include <string>
 #include <fstream>
 #include <vector>
+#include <type_traits>
 
 #include "caffe_io.hpp"
 #include "glog_emulator.hpp"
@@ -1109,9 +1111,13 @@ const char* UpgradeV1LayerType(const V1LayerParameter_LayerType type) {
 
 static const int kProtoReadBytesLimit = INT_MAX;  // Max size of 2 GB minus 1 byte.
 
-bool ReadProtoFromBinary(ZeroCopyInputStream* input, Message *proto) {
+bool ReadProtoFromBinary(ZeroCopyInputStream* input, MessageLite *proto) {
     CodedInputStream coded_input(input);
+#if GOOGLE_PROTOBUF_VERSION >= 3006000
+    coded_input.SetTotalBytesLimit(kProtoReadBytesLimit);
+#else
     coded_input.SetTotalBytesLimit(kProtoReadBytesLimit, 536870912);
+#endif
 
     return proto->ParseFromCodedStream(&coded_input);
 }
@@ -1120,14 +1126,20 @@ bool ReadProtoFromTextFile(const char* filename, Message* proto) {
     std::ifstream fs(filename, std::ifstream::in);
     CHECK(fs.is_open()) << "Can't open \"" << filename << "\"";
     IstreamInputStream input(&fs);
+    google::protobuf::TextFormat::Parser parser;
 #ifndef OPENCV_DNN_EXTERNAL_PROTOBUF
-    return google::protobuf::TextFormat::Parser(true).Parse(&input, proto);
-#else
-    return google::protobuf::TextFormat::Parser().Parse(&input, proto);
+    parser.AllowUnknownField(true);
+    parser.SetRecursionLimit(1000);
 #endif
+    return parser.Parse(&input, proto);
 }
 
-bool ReadProtoFromBinaryFile(const char* filename, Message* proto) {
+bool ReadProtoFromTextFile(const char* filename, MessageLite* proto) {
+    CV_Error(Error::StsError, "DNN/CAFFE: do not have your message be a MessageLite");
+    return false;
+}
+
+bool ReadProtoFromBinaryFile(const char* filename, MessageLite* proto) {
     std::ifstream fs(filename, std::ifstream::in | std::ifstream::binary);
     CHECK(fs.is_open()) << "Can't open \"" << filename << "\"";
     IstreamInputStream raw_input(&fs);
@@ -1137,27 +1149,58 @@ bool ReadProtoFromBinaryFile(const char* filename, Message* proto) {
 
 bool ReadProtoFromTextBuffer(const char* data, size_t len, Message* proto) {
     ArrayInputStream input(data, len);
-    return google::protobuf::TextFormat::Parse(&input, proto);
+    google::protobuf::TextFormat::Parser parser;
+#ifndef OPENCV_DNN_EXTERNAL_PROTOBUF
+    parser.AllowUnknownField(true);
+    parser.SetRecursionLimit(1000);
+#endif
+    return parser.Parse(&input, proto);
 }
 
+bool ReadProtoFromTextBuffer(const char* data, size_t len, MessageLite* proto) {
+    CV_Error(Error::StsError, "DNN/CAFFE: do not have your message be a MessageLite");
+    return false;
+}
 
-bool ReadProtoFromBinaryBuffer(const char* data, size_t len, Message* proto) {
+bool ReadProtoFromBinaryBuffer(const char* data, size_t len, MessageLite* proto) {
     ArrayInputStream raw_input(data, len);
     return ReadProtoFromBinary(&raw_input, proto);
 }
 
-void ReadNetParamsFromTextFileOrDie(const char* param_file,
-                                    NetParameter* param) {
+template<class MESSAGE>
+typename std::enable_if<std::is_base_of<Message, MESSAGE>::value, void>::type
+ReadNetParamsFromTextFileOrDieImpl(const char* param_file, MESSAGE* param) {
   CHECK(ReadProtoFromTextFile(param_file, param))
       << "Failed to parse NetParameter file: " << param_file;
   UpgradeNetAsNeeded(param_file, param);
 }
 
-void ReadNetParamsFromTextBufferOrDie(const char* data, size_t len,
-                                      NetParameter* param) {
+template<class MESSAGE>
+typename std::enable_if<!std::is_base_of<Message, MESSAGE>::value, void>::type
+ReadNetParamsFromTextFileOrDieImpl(const char* param_file, MESSAGE* param) {
+  CV_Error(Error::StsError, "DNN/CAFFE: do not have your message be a MessageLite");
+}
+
+void ReadNetParamsFromTextFileOrDie(const char* param_file, NetParameter* param) {
+  ReadNetParamsFromTextFileOrDieImpl(param_file, param);
+}
+
+template<class MESSAGE>
+typename std::enable_if<std::is_base_of<Message, MESSAGE>::value, void>::type
+ReadNetParamsFromTextBufferOrDieImpl(const char* data, size_t len, MESSAGE* param) {
   CHECK(ReadProtoFromTextBuffer(data, len, param))
       << "Failed to parse NetParameter buffer";
   UpgradeNetAsNeeded("memory buffer", param);
+}
+
+template<class MESSAGE>
+typename std::enable_if<!std::is_base_of<Message, MESSAGE>::value, void>::type
+ReadNetParamsFromTextBufferOrDieImpl(const char* data, size_t len, MESSAGE* param) {
+  CV_Error(Error::StsError, "DNN/CAFFE: do not have your message be a MessageLite");
+}
+
+void ReadNetParamsFromTextBufferOrDie(const char* data, size_t len, NetParameter* param) {
+  ReadNetParamsFromTextBufferOrDieImpl(data, len, param);
 }
 
 void ReadNetParamsFromBinaryFileOrDie(const char* param_file,

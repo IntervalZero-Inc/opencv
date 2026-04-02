@@ -52,7 +52,7 @@ Try it
 
 ### 2. Dilation
 
-It is just opposite of erosion. Here, a pixel element is '1' if atleast one pixel under the kernel
+It is just opposite of erosion. Here, a pixel element is '1' if at least one pixel under the kernel
 is '1'. So it increases the white region in the image or size of foreground object increases.
 Normally, in cases like noise removal, erosion is followed by dilation. Because, erosion removes
 white noises, but it also shrinks our object. So we dilate it. Since noise is gone, they won't come
@@ -158,7 +158,7 @@ Structuring Element
 -------------------
 
 We manually created a structuring elements in the previous examples with help of cv.Mat.ones. It is
-rectangular shape. But in some cases, you may need elliptical/circular shaped kernels. So for this
+rectangular shape. But in some cases, you may need elliptical/circular shaped kernels or diamond-shaped kernels. So for this
 purpose, OpenCV has a function, **cv.getStructuringElement()**. You just pass the shape and size of
 the kernel, you get the desired kernel.
 

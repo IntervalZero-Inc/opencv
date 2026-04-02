@@ -2,7 +2,7 @@
  * jdct.h
  *
  * Copyright (C) 1994-1996, Thomas G. Lane.
- * Modified 2002-2017 by Guido Vollbeding.
+ * Modified 2002-2023 by Guido Vollbeding.
  * This file is part of the Independent JPEG Group's software.
  * For conditions of distribution and use, see the accompanying README file.
  *
@@ -158,7 +158,7 @@ typedef FAST_FLOAT FLOAT_MULT_TYPE; /* preferred floating type */
 #define jpeg_idct_6x12		jRD6x12
 #define jpeg_idct_5x10		jRD5x10
 #define jpeg_idct_4x8		jRD4x8
-#define jpeg_idct_3x6		jRD3x8
+#define jpeg_idct_3x6		jRD3x6
 #define jpeg_idct_2x4		jRD2x4
 #define jpeg_idct_1x2		jRD1x2
 #endif /* NEED_SHORT_EXTERNAL_NAMES */
@@ -357,13 +357,6 @@ EXTERN(void) jpeg_idct_1x2
  */
 
 #define FIX(x)	((INT32) ((x) * CONST_SCALE + 0.5))
-
-/* Descale and correctly round an INT32 value that's scaled by N bits.
- * We assume RIGHT_SHIFT rounds towards minus infinity, so adding
- * the fudge factor is correct for either sign of X.
- */
-
-#define DESCALE(x,n)  RIGHT_SHIFT((x) + (ONE << ((n)-1)), n)
 
 /* Multiply an INT32 variable by an INT32 constant to yield an INT32 result.
  * This macro is used only when the two inputs will actually be no more than

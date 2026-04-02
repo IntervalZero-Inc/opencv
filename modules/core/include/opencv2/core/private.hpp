@@ -53,6 +53,10 @@
 
 #include <opencv2/core/utils/trace.hpp>
 
+#ifdef ENABLE_INSTRUMENTATION
+#include "opencv2/core/utils/instrumentation.hpp"
+#endif
+
 #ifdef HAVE_EIGEN
 #  if defined __GNUC__ && defined __APPLE__
 #    pragma GCC diagnostic ignored "-Wshadow"
@@ -193,8 +197,6 @@ T* allocSingletonNew() { return new(allocSingletonNewBuffer(sizeof(T))) T(); }
 #define IPP_DISABLE_PYRAMIDS_UP         1 // Different results
 #define IPP_DISABLE_PYRAMIDS_DOWN       1 // Different results
 #define IPP_DISABLE_PYRAMIDS_BUILD      1 // Different results
-#define IPP_DISABLE_WARPAFFINE          1 // Different results
-#define IPP_DISABLE_WARPPERSPECTIVE     1 // Different results
 #define IPP_DISABLE_REMAP               1 // Different results
 #define IPP_DISABLE_YUV_RGB             1 // accuracy difference
 #define IPP_DISABLE_RGB_YUV             1 // breaks OCL accuracy tests
@@ -206,11 +208,8 @@ T* allocSingletonNew() { return new(allocSingletonNewBuffer(sizeof(T))) T(); }
 #define IPP_DISABLE_HOUGH               1 // improper integration/results
 #define IPP_DISABLE_FILTER2D_BIG_MASK   1 // different results on masks > 7x7
 
-#define IPP_DISABLE_GAUSSIANBLUR_PARALLEL 1 // not supported (2017u2 / 2017u3)
-
 // Temporary disabled named IPP region. Performance
 #define IPP_DISABLE_PERF_COPYMAKE       1 // performance variations
-#define IPP_DISABLE_PERF_LUT            1 // there are no performance benefits (PR #2653)
 #define IPP_DISABLE_PERF_TRUE_DIST_MT   1 // cv::distanceTransform OpenCV MT performance is better
 #define IPP_DISABLE_PERF_CANNY_MT       1 // cv::Canny OpenCV MT performance is better
 
@@ -233,6 +232,10 @@ T* allocSingletonNew() { return new(allocSingletonNewBuffer(sizeof(T))) T(); }
 #include "ipp.h"
 #endif
 #ifdef HAVE_IPP_IW
+#  if defined(__OPENCV_BUILD) && defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wstrict-prototypes"
+#  endif
 #  if defined(__OPENCV_BUILD) && defined(__GNUC__) && __GNUC__ >= 5
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wsuggest-override"
@@ -243,6 +246,9 @@ T* allocSingletonNew() { return new(allocSingletonNewBuffer(sizeof(T))) T(); }
 #  endif
 #  if defined(__OPENCV_BUILD) && defined(__GNUC__) && __GNUC__ >= 5
 #  pragma GCC diagnostic pop
+#  endif
+#  if defined(__OPENCV_BUILD) && defined(__clang__)
+#  pragma clang diagnostic pop
 #  endif
 #endif
 
@@ -709,10 +715,10 @@ CV_EXPORTS InstrNode*   getCurrentNode();
 #endif
 
 // Instrument region
-#define CV_INSTRUMENT_REGION_META(NAME, ALWAYS_EXPAND, TYPE, IMPL)        ::cv::instr::IntrumentationRegion __instr_region__(NAME, __FILE__, __LINE__, CV_INSTRUMENT_GET_RETURN_ADDRESS, ALWAYS_EXPAND, TYPE, IMPL);
+#define CV_INSTRUMENT_REGION_META(NAME, ALWAYS_EXPAND, TYPE, IMPL)        ::cv::instr::IntrumentationRegion  CVAUX_CONCAT(__instr_region__, __LINE__) (NAME, __FILE__, __LINE__, CV_INSTRUMENT_GET_RETURN_ADDRESS, ALWAYS_EXPAND, TYPE, IMPL);
 #define CV_INSTRUMENT_REGION_CUSTOM_META(NAME, ALWAYS_EXPAND, TYPE, IMPL)\
-    void *__curr_address__ = [&]() {return CV_INSTRUMENT_GET_RETURN_ADDRESS;}();\
-    ::cv::instr::IntrumentationRegion __instr_region__(NAME, __FILE__, __LINE__, __curr_address__, false, ::cv::instr::TYPE_GENERAL, ::cv::instr::IMPL_PLAIN);
+    void *CVAUX_CONCAT(__curr_address__, __LINE__) = [&]() {return CV_INSTRUMENT_GET_RETURN_ADDRESS;}();\
+    ::cv::instr::IntrumentationRegion CVAUX_CONCAT(__instr_region__, __LINE__) (NAME, __FILE__, __LINE__, CVAUX_CONCAT(__curr_address__, __LINE__), false, ::cv::instr::TYPE_GENERAL, ::cv::instr::IMPL_PLAIN);
 // Instrument functions with non-void return type
 #define CV_INSTRUMENT_FUN_RT_META(TYPE, IMPL, ERROR_COND, FUN, ...) ([&]()\
 {\

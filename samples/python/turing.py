@@ -32,7 +32,7 @@ def main():
 
     w, h = 512, 512
 
-    args, args_list = getopt.getopt(sys.argv[1:], 'o:', [])
+    args, _args_list = getopt.getopt(sys.argv[1:], 'o:', [])
     args = dict(args)
     out = None
     if '-o' in args:
@@ -62,7 +62,7 @@ def main():
             vs.append(v)
         mi = np.argmin(vs, 0)
         a += np.choose(mi, ms) * 0.025
-        a = (a-a.min()) / a.ptp()
+        a = (a-a.min()) / np.ptp(a)
 
         if out:
             out.write(a)

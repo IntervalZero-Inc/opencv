@@ -18,7 +18,7 @@ int morph_elem = 0;
 int morph_size = 0;
 int morph_operator = 0;
 int const max_operator = 4;
-int const max_elem = 2;
+int const max_elem = 3;
 int const max_kernel_size = 21;
 
 const char* window_name = "Morphology Transformations Demo";
@@ -33,13 +33,13 @@ void Morphology_Operations( int, void* );
 int main( int argc, char** argv )
 {
   //![load]
-  CommandLineParser parser( argc, argv, "{@input | ../data/baboon.jpg | input image}" );
-  src = imread( parser.get<String>( "@input" ), IMREAD_COLOR );
+  CommandLineParser parser( argc, argv, "{@input | baboon.jpg | input image}" );
+  src = imread( samples::findFile( parser.get<String>( "@input" ) ), IMREAD_COLOR );
   if (src.empty())
   {
     std::cout << "Could not open or find the image!\n" << std::endl;
     std::cout << "Usage: " << argv[0] << " <Input image>" << std::endl;
-    return -1;
+    return EXIT_FAILURE;
   }
   //![load]
 
@@ -54,7 +54,7 @@ int main( int argc, char** argv )
 
   //![create_trackbar2]
   /// Create Trackbar to select kernel type
-  createTrackbar( "Element:\n 0: Rect - 1: Cross - 2: Ellipse", window_name,
+  createTrackbar( "Element:\n 0: Rect - 1: Cross - 2: Ellipse - 3: Diamond", window_name,
                   &morph_elem, max_elem,
                   Morphology_Operations );
   //![create_trackbar2]

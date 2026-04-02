@@ -40,6 +40,9 @@
 //M*/
 
 #include "../precomp.hpp"
+
+#include <opencv2/core/utils/fp_control_utils.hpp>
+
 #include <limits>
 #include <set>
 #include <map>
@@ -81,7 +84,7 @@ enum TorchType
     TYPE_FLOAT  = CV_32F,
     TYPE_BYTE   = CV_8U,
     TYPE_CHAR   = CV_8S,
-    TYPE_SHORT  = CV_16S,
+    TYPE_SHORT  = CV_16F,
     TYPE_INT    = CV_32S,
     TYPE_LONG   = CV_32SC2
 };
@@ -106,6 +109,8 @@ static inline bool endsWith(const String &str, const char *substr)
 
 struct TorchImporter
 {
+    FPDenormalsIgnoreHintScope fp_denormals_ignore_scope;
+
     typedef std::map<String, std::pair<int, Mat> > TensorsMap;
     Net net;
 
@@ -271,7 +276,7 @@ struct TorchImporter
             THFile_readByteRaw(file, (uchar*)storageMat.data, size);
             break;
         case TYPE_SHORT:
-            storageMat.create(1, size, CV_16S);
+            storageMat.create(1, size, CV_16F);
             THFile_readShortRaw(file, (short*)storageMat.data, size);
             break;
         case TYPE_INT:
@@ -312,7 +317,7 @@ struct TorchImporter
             fpos = THFile_position(file);
             int ktype = readInt();
 
-            if (ktype != TYPE_STRING) //skip non-string fileds
+            if (ktype != TYPE_STRING) //skip non-string fields
             {
                 THFile_seek(file, fpos);
                 readObject(); //key
@@ -593,7 +598,7 @@ struct TorchImporter
                 readTorchTable(scalarParams, tensorParams);
 
                 CV_Assert(tensorParams.count("weight"));
-                Mat weightBlob = tensorParams["weight"].second;
+                const Mat& weightBlob = tensorParams["weight"].second;
                 layerParams.blobs.push_back(weightBlob);
 
                 bool bias = tensorParams.count("bias") != 0;
@@ -777,12 +782,16 @@ struct TorchImporter
                 int dim = scalarParams.get<int>("dim") - 1;  // In Lua we start from 1.
                 int pad = scalarParams.get<int>("pad");
 
-                std::vector<int> paddings((dim + 1) * 2, 0);
+                AutoBuffer<int> paddingsBuf((dim + 1) * 2);
+                int *paddings = paddingsBuf.data();
+                int paddingsSize = (dim + 1) * 2;
+                for (int i = 0; i < paddingsSize; ++i) paddings[i] = 0;
                 if (pad > 0)
-                    paddings[dim * 2 + 1] = pad;  // Pad after (right).
+                    paddings[dim * 2 + 1] = pad;
                 else
-                    paddings[dim * 2] = -pad;  // Pad before (left).
-                layerParams.set("paddings", DictValue::arrayInt<int*>(&paddings[0], paddings.size()));
+                    paddings[dim * 2] = -pad;
+                layerParams.set("paddings", DictValue::arrayInt<int*>(paddings, paddingsSize));
+
 
                 curModule->modules.push_back(newModule);
             }
@@ -865,15 +874,13 @@ struct TorchImporter
                 layerParams.set("indices_blob_id", tensorParams["indices"].first);
                 curModule->modules.push_back(newModule);
             }
-            else if (nnName == "SoftMax")
+            else if (nnName == "LogSoftMax" || nnName == "SoftMax")
             {
-                newModule->apiType = "SoftMax";
-                curModule->modules.push_back(newModule);
-            }
-            else if (nnName == "LogSoftMax")
-            {
-                newModule->apiType = "SoftMax";
-                layerParams.set("log_softmax", true);
+                newModule->apiType = "Softmax";
+                layerParams.set("log_softmax", nnName == "LogSoftMax");
+                // set default axis to 1
+                if(!layerParams.has("axis"))
+                    layerParams.set("axis", 1);
                 curModule->modules.push_back(newModule);
             }
             else if (nnName == "SpatialCrossMapLRN")
@@ -899,7 +906,7 @@ struct TorchImporter
             {
                 readTorchTable(scalarParams, tensorParams);
 
-                float power;
+                float power = 1.0f;
                 if (nnName == "Square") power = 2.0f;
                 else if (nnName == "Sqrt") power = 0.5f;
                 else if (nnName == "Power") power = scalarParams.get<float>("pow", 1.0f);
@@ -932,12 +939,14 @@ struct TorchImporter
 
                 // Torch's SpatialZeroPadding works with 3- or 4-dimensional input.
                 // So we add parameter input_dims=3 to ignore batch dimension if it will be.
-                std::vector<int> paddings(6, 0);  // CHW
+                int paddings[6] = {0, 0, 0, 0, 0, 0};
+
                 paddings[2] = padTop;
                 paddings[3] = padBottom;
                 paddings[4] = padLeft;
                 paddings[5] = padRight;
-                layerParams.set("paddings", DictValue::arrayInt<int*>(&paddings[0], paddings.size()));
+
+                layerParams.set("paddings", DictValue::arrayInt(paddings, 6));
                 layerParams.set("input_dims", 3);
 
                 if (nnName == "SpatialReflectionPadding")
@@ -954,7 +963,7 @@ struct TorchImporter
                 int size = scalarParams.get<int>("size");
 
                 int begins[] = {0, 0, size, size};
-                int ends[] = {-1, -1, -size - 1, -size - 1};
+                int ends[] = {INT_MAX, INT_MAX, -size, -size};
 
                 newModule->apiType = "Slice";
                 layerParams.set("begin", DictValue::arrayInt<int*>(&begins[0], 4));

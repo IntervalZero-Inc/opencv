@@ -5,6 +5,7 @@
 
 #include "precomp.hpp"
 
+#ifndef OPENCV_EXCLUDE_C_API
 
 CV_IMPL void
 cvSplit( const void* srcarr, void* dstarr0, void* dstarr1, void* dstarr2, void* dstarr3 )
@@ -82,7 +83,9 @@ cvMixChannels( const CvArr** src, int src_count,
                CvArr** dst, int dst_count,
                const int* from_to, int pair_count )
 {
-    cv::AutoBuffer<cv::Mat> buf(src_count + dst_count);
+    CV_Assert(src_count >= 0 && dst_count >= 0);
+    size_t buf_size = static_cast<size_t>(src_count) + static_cast<size_t>(dst_count);
+    cv::AutoBuffer<cv::Mat> buf(buf_size);
 
     int i;
     for( i = 0; i < src_count; i++ )
@@ -132,3 +135,5 @@ CV_IMPL void cvNormalize( const CvArr* srcarr, CvArr* dstarr,
     CV_Assert( dst.size() == src.size() && src.channels() == dst.channels() );
     cv::normalize( src, dst, a, b, norm_type, dst.type(), mask );
 }
+
+#endif  // OPENCV_EXCLUDE_C_API

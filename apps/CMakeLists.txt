@@ -1,6 +1,13 @@
 add_definitions(-D__OPENCV_BUILD=1)
 add_definitions(-D__OPENCV_APPS=1)
 
+if (NOT CMAKE_CROSSCOMPILING)
+  file(RELATIVE_PATH __loc_relative "${OpenCV_BINARY_DIR}" "${CMAKE_CURRENT_LIST_DIR}/pattern-tools\n")
+  file(APPEND "${OpenCV_BINARY_DIR}/opencv_apps_python_tests.cfg" "${__loc_relative}")
+endif()
+
+string(REPLACE "," ";" OPENCV_INSTALL_APPS_LIST "${OPENCV_INSTALL_APPS_LIST}")  # support comma-separated list (,) too
+
 # Unified function for creating OpenCV applications:
 #   ocv_add_application(tgt [MODULES <m1> [<m2> ...]] SRCS <src1> [<src2> ...])
 function(ocv_add_application the_target)
@@ -25,12 +32,14 @@ function(ocv_add_application the_target)
     set_target_properties(${the_target} PROPERTIES FOLDER "applications")
   endif()
 
-  if(INSTALL_CREATE_DISTRIB)
+  if(NOT INSTALL_CREATE_DISTRIB
+      OR (OPENCV_INSTALL_APPS_LIST STREQUAL "all" OR ";${OPENCV_INSTALL_APPS_LIST};" MATCHES ";${the_target};")
+  )
+    install(TARGETS ${the_target} RUNTIME DESTINATION ${OPENCV_BIN_INSTALL_PATH} COMPONENT dev)
+  elseif(INSTALL_CREATE_DISTRIB)
     if(BUILD_SHARED_LIBS)
       install(TARGETS ${the_target} RUNTIME DESTINATION ${OPENCV_BIN_INSTALL_PATH} CONFIGURATIONS Release COMPONENT dev)
     endif()
-  else()
-    install(TARGETS ${the_target} RUNTIME DESTINATION ${OPENCV_BIN_INSTALL_PATH} COMPONENT dev)
   endif()
 endfunction()
 
@@ -55,3 +64,4 @@ ocv_add_app(annotation)
 ocv_add_app(visualisation)
 ocv_add_app(interactive-calibration)
 ocv_add_app(version)
+ocv_add_app(model-diagnostics)

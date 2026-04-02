@@ -24,6 +24,8 @@ red line. All the expected straight lines are bulged out. Visit [Distortion
 
 ![image](images/calib_radial.jpg)
 
+In the following sections several new parameters are introduced. Visit [Camera Calibration and 3D Reconstruction](#tutorial_table_of_content_calib3d) for more details.
+
 Radial distortion can be represented as follows:
 
 \f[x_{distorted} = x( 1 + k_1 r^2 + k_2 r^4 + k_3 r^6) \\
@@ -83,7 +85,7 @@ use 7x6 grid. (Normally a chess board has 8x8 squares and 7x7 internal corners).
 corner points and retval which will be True if pattern is obtained. These corners will be placed in
 an order (from left-to-right, top-to-bottom)
 
-@sa This function may not be able to find the required pattern in all the images. So, one good option
+@note This function may not be able to find the required pattern in all the images. So, one good option
 is to write the code such that, it starts the camera and check each frame for required pattern. Once
 the pattern is obtained, find the corners and store it in a list. Also, provide some interval before
 reading next frame so that we can adjust our chess board in different direction. Continue this
@@ -91,7 +93,7 @@ process until the required number of good patterns are obtained. Even in the exa
 are not sure how many images out of the 14 given are good.  Thus, we must read all the images and take only the good
 ones.
 
-@sa Instead of chess board, we can alternatively use a circular grid.  In this case, we must use the function
+@note Instead of chess board, we can alternatively use a circular grid.  In this case, we must use the function
 **cv.findCirclesGrid()** to find the pattern. Fewer images are sufficient to perform camera calibration using a circular grid.
 
 Once we find the corners, we can increase their accuracy using **cv.cornerSubPix()**. We can also
@@ -127,7 +129,7 @@ for fname in images:
         objpoints.append(objp)
 
         corners2 = cv.cornerSubPix(gray,corners, (11,11), (-1,-1), criteria)
-        imgpoints.append(corners)
+        imgpoints.append(corners2)
 
         # Draw and display the corners
         cv.drawChessboardCorners(img, (7,6), corners2, ret)
@@ -204,20 +206,18 @@ Re-projection Error
 
 Re-projection error gives a good estimation of just how exact the found parameters are. The closer the re-projection error is to zero, the more accurate the parameters we found are. Given the intrinsic, distortion, rotation and translation matrices,
 we must first transform the object point to image point using **cv.projectPoints()**. Then, we can calculate
-the absolute norm between what we got with our transformation and the corner finding algorithm. To
-find the average error, we calculate the arithmetical mean of the errors calculated for all the
-calibration images.
+the norm between what we got with our transformation and the corner finding algorithm. To find the
+RMSE (root mean squared error), we average the squared errors over all points and images, then take
+the square root.
 @code{.py}
 mean_error = 0
-for i in xrange(len(objpoints)):
+for i in range(len(objpoints)):
     imgpoints2, _ = cv.projectPoints(objpoints[i], rvecs[i], tvecs[i], mtx, dist)
-    error = cv.norm(imgpoints[i], imgpoints2, cv.NORM_L2)/len(imgpoints2)
+    error = cv.norm(imgpoints[i], imgpoints2, cv.NORM_L2SQR) / len(imgpoints2)
     mean_error += error
 
-print( "total error: {}".format(mean_error/len(objpoints)) )
+print( "total error: {}".format(np.sqrt(mean_error/len(objpoints))) )
 @endcode
-Additional Resources
---------------------
 
 Exercises
 ---------

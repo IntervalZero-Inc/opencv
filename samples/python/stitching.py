@@ -43,14 +43,16 @@ def main():
             sys.exit(-1)
         imgs.append(img)
 
+    #![stitching]
     stitcher = cv.Stitcher.create(args.mode)
     status, pano = stitcher.stitch(imgs)
 
     if status != cv.Stitcher_OK:
         print("Can't stitch images, error code = %d" % status)
         sys.exit(-1)
+    #![stitching]
 
-    cv.imwrite(args.output, pano);
+    cv.imwrite(args.output, pano)
     print("stitching completed successfully. %s saved!" % args.output)
 
     print('Done')

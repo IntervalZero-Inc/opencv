@@ -57,7 +57,7 @@ static int cvTsRodrigues( const CvMat* src, CvMat* dst, CvMat* jacobian )
 
     if( jacobian )
     {
-        assert( (jacobian->rows == 9 && jacobian->cols == 3) ||
+        CV_Assert( (jacobian->rows == 9 && jacobian->cols == 3) ||
                 (jacobian->rows == 3 && jacobian->cols == 9) );
     }
 
@@ -66,7 +66,7 @@ static int cvTsRodrigues( const CvMat* src, CvMat* dst, CvMat* jacobian )
         double r[3], theta;
         CvMat _r = cvMat( src->rows, src->cols, CV_MAKETYPE(CV_64F,CV_MAT_CN(src->type)), r);
 
-        assert( dst->rows == 3 && dst->cols == 3 );
+        CV_Assert( dst->rows == 3 && dst->cols == 3 );
 
         cvConvert( src, &_r );
 
@@ -321,7 +321,7 @@ static int cvTsRodrigues( const CvMat* src, CvMat* dst, CvMat* jacobian )
     }
     else
     {
-        assert(0);
+        CV_Assert(0);
         return 0;
     }
 
@@ -407,7 +407,7 @@ static void test_convertHomogeneous( const Mat& _src, Mat& _dst )
     }
     else
     {
-        assert( count == dst.cols );
+        CV_Assert( count == dst.cols );
         ddims = dst.channels()*dst.rows;
         if( dst.rows == 1 )
         {
@@ -621,9 +621,9 @@ void CV_RodriguesTest::get_test_array_types_and_sizes(
 }
 
 
-double CV_RodriguesTest::get_success_error_level( int /*test_case_idx*/, int /*i*/, int j )
+double CV_RodriguesTest::get_success_error_level( int /*test_case_idx*/, int /*i*/, int /*j*/ )
 {
-    return j == 4 ? 1e-2 : 1e-2;
+    return 1e-2;
 }
 
 
@@ -1671,6 +1671,14 @@ TEST(Calib3d_FindFundamentalMat, correctMatches)
 
     cout << np1 << endl;
     cout << np2 << endl;
+}
+
+TEST(Calib3d_FindFundamentalMat, Crash)
+{
+    vector<Point2f> m1 = {{245, 128},{284, 226},{140, 60},{133, 127},{71, 218},{152, 138},{181, 106}};
+    vector<Point2f> m2 = m1;
+    vector<uchar> mask;
+    findFundamentalMat(m1, m2, mask, FM_LMEDS, 1, 0.99);
 }
 
 }} // namespace

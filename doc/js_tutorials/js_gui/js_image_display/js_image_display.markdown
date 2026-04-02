@@ -13,7 +13,7 @@ OpenCV.js saves images as cv.Mat type. We use HTML canvas element to transfer cv
 or in reverse. The ImageData interface can represent or set the underlying pixel data of an area of a
 canvas element.
 
-@sa Please refer to canvas docs for more details.
+@note Please refer to canvas docs for more details.
 
 First, create an ImageData obj from canvas:
 @code{.js}
@@ -45,7 +45,7 @@ cv.cvtColor(dst, dst, cv.COLOR_***2RGBA);
 
 Then, new an ImageData obj from dst:
 @code{.js}
-let imgData = new ImageData(new Uint8ClampedArray(dst.data, dst.cols, dst.rows);
+let imgData = new ImageData(new Uint8ClampedArray(dst.data), dst.cols, dst.rows);
 @endcode
 
 Finally, display it:

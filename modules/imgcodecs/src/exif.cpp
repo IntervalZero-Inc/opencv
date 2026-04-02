@@ -42,6 +42,7 @@
 
 #include "precomp.hpp"
 #include "exif.hpp"
+#include "opencv2/core/utils/logger.hpp"
 
 namespace {
 
@@ -53,6 +54,43 @@ namespace {
 namespace cv
 {
 
+static std::string HexStringToBytes(const char* hexstring, size_t expected_length);
+
+// Converts the NULL terminated 'hexstring' which contains 2-byte character
+// representations of hex values to raw data.
+// 'hexstring' may contain values consisting of [A-F][a-f][0-9] in pairs,
+// e.g., 7af2..., separated by any number of newlines.
+// 'expected_length' is the anticipated processed size.
+// On success the raw buffer is returned with its length equivalent to
+// 'expected_length'. NULL is returned if the processed length is less than
+// 'expected_length' or any character aside from those above is encountered.
+// The returned buffer must be freed by the caller.
+static std::string HexStringToBytes(const char* hexstring,
+    size_t expected_length) {
+    const char* src = hexstring;
+    size_t actual_length = 0;
+    std::string raw_data;
+    raw_data.resize(expected_length);
+    char* dst = const_cast<char*>(raw_data.data());
+
+    for (; actual_length < expected_length && *src != '\0'; ++src) {
+        char* end;
+        char val[3];
+        if (*src == '\n') continue;
+        val[0] = *src++;
+        val[1] = *src;
+        val[2] = '\0';
+        *dst++ = static_cast<uint8_t>(strtol(val, &end, 16));
+        if (end != val + 2) break;
+        ++actual_length;
+    }
+
+    if (actual_length != expected_length) {
+        raw_data.clear();
+    }
+    return raw_data;
+}
+
 ExifEntry_t::ExifEntry_t() :
     field_float(0), field_double(0), field_u32(0), field_s32(0),
     tag(INVALID_TAG), field_u16(0), field_s16(0), field_u8(0), field_s8(0)
@@ -62,7 +100,7 @@ ExifEntry_t::ExifEntry_t() :
 /**
  * @brief ExifReader constructor
  */
-ExifReader::ExifReader(std::istream& stream) : m_stream(stream), m_format(NONE)
+ExifReader::ExifReader() : m_format(NONE)
 {
 }
 
@@ -71,25 +109,6 @@ ExifReader::ExifReader(std::istream& stream) : m_stream(stream), m_format(NONE)
  */
 ExifReader::~ExifReader()
 {
-}
-
-/**
- * @brief Parsing the file and prepare (internally) exif directory structure
- * @return  true if parsing was successful and exif information exists in JpegReader object
- *          false in case of unsuccessful parsing
- */
-bool ExifReader::parse()
-{
-    try {
-        m_exif = getExif();
-        if( !m_exif.empty() )
-        {
-            return true;
-        }
-        return false;
-    } catch (ExifParsingError&) {
-        return false;
-    }
 }
 
 
@@ -101,10 +120,10 @@ bool ExifReader::parse()
  *  @return ExifEntru_t structure. Caller has to know what tag it calls in order to extract proper field from the structure ExifEntry_t
  *
  */
-ExifEntry_t ExifReader::getTag(const ExifTagName tag)
+ExifEntry_t ExifReader::getTag(const ExifTagName tag) const
 {
     ExifEntry_t entry;
-    std::map<int, ExifEntry_t>::iterator it = m_exif.find(tag);
+    std::map<int, ExifEntry_t>::const_iterator it = m_exif.find(tag);
 
     if( it != m_exif.end() )
     {
@@ -113,109 +132,80 @@ ExifEntry_t ExifReader::getTag(const ExifTagName tag)
     return entry;
 }
 
-
-/**
- * @brief Get exif directory structure contained in file (if any)
- *          This is internal function and is not exposed to client
- *
- *  @return Map where key is tag number and value is ExifEntry_t structure
- */
-std::map<int, ExifEntry_t > ExifReader::getExif()
+const std::vector<unsigned char>& ExifReader::getData() const
 {
-    const std::streamsize markerSize = 2;
-    const std::streamsize offsetToTiffHeader = 6; //bytes from Exif size field to the first TIFF header
-    unsigned char appMarker[markerSize];
-    m_exif.erase( m_exif.begin(), m_exif.end() );
+    return m_data;
+}
 
-    std::streamsize count;
+bool ExifReader::processRawProfile(const char* profile, size_t profile_len) {
+    const char* src = profile;
+    char* end;
+    int expected_length;
 
-    bool exifFound = false, stopSearch = false;
-    while( ( !m_stream.eof() ) && !exifFound && !stopSearch )
-    {
-        m_stream.read( reinterpret_cast<char*>(appMarker), markerSize );
-        count = m_stream.gcount();
-        if( count < markerSize )
-        {
-            break;
-        }
-        unsigned char marker = appMarker[1];
-        size_t bytesToSkip;
-        size_t exifSize;
-        switch( marker )
-        {
-            //For all the markers just skip bytes in file pointed by followed two bytes (field size)
-            case SOF0: case SOF2: case DHT: case DQT: case DRI: case SOS:
-            case RST0: case RST1: case RST2: case RST3: case RST4: case RST5: case RST6: case RST7:
-            case APP0: case APP2: case APP3: case APP4: case APP5: case APP6: case APP7: case APP8:
-            case APP9: case APP10: case APP11: case APP12: case APP13: case APP14: case APP15:
-            case COM:
-                bytesToSkip = getFieldSize();
-                if (bytesToSkip < markerSize) {
-                    throw ExifParsingError();
-                }
-                m_stream.seekg( static_cast<long>( bytesToSkip - markerSize ), m_stream.cur );
-                if ( m_stream.fail() ) {
-                    throw ExifParsingError();
-                }
-                break;
+    if (profile == nullptr || profile_len == 0) return false;
 
-            //SOI and EOI don't have the size field after the marker
-            case SOI: case EOI:
-                break;
-
-            case APP1: //actual Exif Marker
-                exifSize = getFieldSize();
-                if (exifSize <= offsetToTiffHeader) {
-                    throw ExifParsingError();
-                }
-                m_data.resize( exifSize - offsetToTiffHeader );
-                m_stream.seekg( static_cast<long>( offsetToTiffHeader ), m_stream.cur );
-                if ( m_stream.fail() ) {
-                    throw ExifParsingError();
-                }
-                m_stream.read( reinterpret_cast<char*>(&m_data[0]), exifSize - offsetToTiffHeader );
-                exifFound = true;
-                break;
-
-            default: //No other markers are expected according to standard. May be a signal of error
-                stopSearch = true;
-                break;
-        }
+    // ImageMagick formats 'raw profiles' as
+    // '\n<name>\n<length>(%8lu)\n<hex payload>\n'.
+    if (*src != '\n') {
+        CV_LOG_WARNING(NULL, cv::format("Malformed raw profile, expected '\\n' got '\\x%.2X'", *src));
+        return false;
     }
-
-    if( !exifFound )
-    {
-        return m_exif;
+    ++src;
+    // skip the profile name and extract the length.
+    while (*src != '\0' && *src++ != '\n') {}
+    expected_length = static_cast<int>(strtol(src, &end, 10));
+    if (*end != '\n') {
+        CV_LOG_WARNING(NULL, cv::format("Malformed raw profile, expected '\\n' got '\\x%.2X'", *src));
+        return false;
     }
+    ++end;
 
-    parseExif();
+    // 'end' now points to the profile payload.
+    std::string payload = HexStringToBytes(end, expected_length);
+    if (payload.size() == 0) return false;
 
-    return m_exif;
+    return parseExif((unsigned char*)payload.c_str() + 6, expected_length - 6);
 }
 
 /**
- * @brief Get the size of exif field (required to properly ready whole exif from the file)
- *          This is internal function and is not exposed to client
+ * @brief Parsing the exif data buffer and prepare (internal) exif directory
  *
- *  @return size of exif field in the file
+ * @param [in] data The data buffer to read EXIF data starting with endianness
+ * @param [in] size The size of the data buffer
+ *
+ * @return  true if parsing was successful
+ *          false in case of unsuccessful parsing
  */
-size_t ExifReader::getFieldSize ()
+bool ExifReader::parseExif(unsigned char* data, const size_t size)
 {
-    unsigned char fieldSize[2];
-    m_stream.read( reinterpret_cast<char*>(fieldSize), 2 );
-    std::streamsize count = m_stream.gcount();
-    if (count < 2)
+    // Populate m_data, then call parseExif() (private)
+    if( data && size > 0 )
     {
-        return 0;
+        m_data.assign(data, data + size);
     }
-    return ( fieldSize[0] << 8 ) + fieldSize[1];
+    else
+    {
+        return false;
+    }
+
+    try {
+        parseExif();
+        if( !m_exif.empty() )
+        {
+            return true;
+        }
+        return false;
+    }
+    catch( ExifParsingError& ) {
+        return false;
+    }
 }
 
 /**
  * @brief Filling m_exif member with exif directory elements
  *          This is internal function and is not exposed to client
  *
- *  @return The function doesn't return any value. In case of unsuccessful parsing
+ *  The function doesn't return any value. In case of unsuccessful parsing
  *      the m_exif member is not filled up
  */
 void ExifReader::parseExif()
@@ -229,7 +219,7 @@ void ExifReader::parseExif()
 
     uint32_t offset = getStartOffset();
 
-    size_t numEntry = getNumDirEntry();
+    size_t numEntry = getNumDirEntry( offset );
 
     offset += 2; //go to start of tag fields
 
@@ -247,7 +237,7 @@ void ExifReader::parseExif()
  *
  * @return INTEL, MOTO or NONE
  */
-Endianess_t ExifReader::getFormat() const
+Endianness_t ExifReader::getFormat() const
 {
     if (m_data.size() < 1)
         return NONE;
@@ -303,7 +293,7 @@ uint32_t ExifReader::getStartOffset() const
  *
  * @return The number of directory entries
  */
-size_t ExifReader::getNumDirEntry() const
+size_t ExifReader::getNumDirEntry(const size_t offsetNumDir) const
 {
     return getU16( offsetNumDir );
 }

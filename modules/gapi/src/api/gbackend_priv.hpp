@@ -18,6 +18,9 @@
 #include "opencv2/gapi/gcommon.hpp"
 #include "opencv2/gapi/gkernel.hpp"
 
+#include "compiler/gmodel.hpp"
+#include "compiler/gislandmodel.hpp"
+
 namespace cv
 {
 namespace gimpl
@@ -41,13 +44,53 @@ public:
     // there's no need in having both cv::gimpl::GBackend
     // and cv::gapi::GBackend - these two things can be unified
     // NOTE - nodes are guaranteed to be topologically sorted.
+
+    // NB: This method is deprecated
     virtual EPtr compile(const ade::Graph   &graph,
                          const GCompileArgs &args,
                          const std::vector<ade::NodeHandle> &nodes) const;
 
+
+    virtual EPtr compile(const ade::Graph   &graph,
+                         const GCompileArgs &args,
+                         const std::vector<ade::NodeHandle> &nodes,
+                         const std::vector<cv::gimpl::Data>& ins_data,
+                         const std::vector<cv::gimpl::Data>& outs_data) const;
+
+    // Ask backend to provide general backend-specific compiler passes
     virtual void addBackendPasses(ade::ExecutionEngineSetupContext &);
 
-    virtual cv::gapi::GKernelPackage auxiliaryKernels() const;
+    // Ask backend to put extra meta-sensitive backend passes Since
+    // the inception of Streaming API one can compile graph without
+    // meta information, so if some passes depend on this information,
+    // they are called when meta information becomes available.
+    virtual void addMetaSensitiveBackendPasses(ade::ExecutionEngineSetupContext &);
+
+    virtual cv::GKernelPackage auxiliaryKernels() const;
+
+    // Ask backend if it has a custom control over island fusion process
+    // This method is quite redundant but there's nothing better fits
+    // the current fusion process. By default, [existing] backends don't
+    // control the merge.
+    // FIXME: Refactor to a single entity?
+    virtual bool controlsMerge() const;
+
+    // Ask backend if it is ok to merge these two islands connected
+    // via a data slot. By default, [existing] backends allow to merge everything.
+    // FIXME: Refactor to a single entity?
+    // FIXME: Strip down the type details form graph? (make it ade::Graph?)
+    virtual bool allowsMerge(const cv::gimpl::GIslandModel::Graph &g,
+                             const ade::NodeHandle &a_nh,
+                             const ade::NodeHandle &slot_nh,
+                             const ade::NodeHandle &b_nh) const;
+
+    // Ask backend if it supports CONST_VAL data of the given shape or not.
+    // If the backend does support this data type, a Data node with such
+    // value can be fused into the backend's Island body.
+    // If the backend doesn't support this data type, a Data node won't
+    // be fused into the Islands's body -- will be marked as an in-graph
+    // input connection for this Island.
+    virtual bool supportsConst(cv::GShape shape) const;
 
     virtual ~Priv() = default;
 };

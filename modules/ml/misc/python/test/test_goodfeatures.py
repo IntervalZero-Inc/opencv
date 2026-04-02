@@ -11,13 +11,13 @@ from tests_common import NewOpenCVTests
 class TestGoodFeaturesToTrack_test(NewOpenCVTests):
     def test_goodFeaturesToTrack(self):
         arr = self.get_sample('samples/data/lena.jpg', 0)
-        original = arr.copy(True)
+        original = arr.copy()
         threshes = [ x / 100. for x in range(1,10) ]
         numPoints = 20000
 
         results = dict([(t, cv.goodFeaturesToTrack(arr, numPoints, t, 2, useHarrisDetector=True)) for t in threshes])
         # Check that GoodFeaturesToTrack has not modified input image
-        self.assertTrue(arr.tostring() == original.tostring())
+        self.assertTrue(arr.tobytes() == original.tobytes())
         # Check for repeatability
         for i in range(1):
             results2 = dict([(t, cv.goodFeaturesToTrack(arr, numPoints, t, 2, useHarrisDetector=True)) for t in threshes])

@@ -12,6 +12,7 @@
 #include <sstream>
 #include <iostream>
 #include <fstream>
+#include <atomic>
 
 #ifdef __ANDROID__
 # include <android/log.h>
@@ -45,6 +46,8 @@ public:
     GlobalLoggingInitStruct()
         : logTagManager(m_defaultUnconfiguredGlobalLevel)
     {
+        (void)getInitializationMutex();  // ensure initialization of global objects
+
         applyConfigString();
         handleMalformed();
     }
@@ -92,8 +95,7 @@ LogLevel GlobalLoggingInitStruct::m_defaultUnconfiguredGlobalLevel = GlobalLoggi
 //
 static GlobalLoggingInitStruct& getGlobalLoggingInitStruct()
 {
-    static GlobalLoggingInitStruct globalLoggingInitInstance;
-    return globalLoggingInitInstance;
+    CV_SINGLETON_LAZY_INIT_REF(GlobalLoggingInitStruct, new GlobalLoggingInitStruct());
 }
 
 // To ensure that the combined struct defined above is initialized even
@@ -106,6 +108,7 @@ struct GlobalLoggingInitCall
     GlobalLoggingInitCall()
     {
         getGlobalLoggingInitStruct();
+        (void)getGlobalLogTag();  // complete initialization of logger structures
     }
 };
 
@@ -179,20 +182,49 @@ LogLevel getLogLevel()
 
 namespace internal {
 
+namespace //unnamed
+{
+    std::atomic<WriteLogMessageFuncType> stc_userWriteLogMessageFunc{};
+    std::atomic<WriteLogMessageExFuncType> stc_userWriteLogMessageExFunc{};
+} //unnamed
+
+static int getShowTimestampMode()
+{
+    static bool param_timestamp_enable = utils::getConfigurationParameterBool("OPENCV_LOG_TIMESTAMP", true);
+    static bool param_timestamp_ns_enable = utils::getConfigurationParameterBool("OPENCV_LOG_TIMESTAMP_NS", false);
+    return (param_timestamp_enable ? 1 : 0) + (param_timestamp_ns_enable ? 2 : 0);
+}
+
 void writeLogMessage(LogLevel logLevel, const char* message)
 {
+    WriteLogMessageFuncType userFunc = stc_userWriteLogMessageFunc.load();
+    if (userFunc && userFunc != writeLogMessage)
+    {
+        (*userFunc)(logLevel, message);
+        return;
+    }
+
     const int threadID = cv::utils::getThreadID();
+
+    std::string message_id;
+    switch (getShowTimestampMode())
+    {
+        case 1: message_id = cv::format("%d@%0.3f", threadID, getTimestampNS() * 1e-9); break;
+        case 1+2: message_id = cv::format("%d@%llu", threadID, (long long unsigned int)getTimestampNS()); break;
+        default: message_id = cv::format("%d", threadID); break;
+    }
+
     std::ostringstream ss;
     switch (logLevel)
     {
-    case LOG_LEVEL_FATAL:   ss << "[FATAL:" << threadID << "] " << message << std::endl; break;
-    case LOG_LEVEL_ERROR:   ss << "[ERROR:" << threadID << "] " << message << std::endl; break;
-    case LOG_LEVEL_WARNING: ss << "[ WARN:" << threadID << "] " << message << std::endl; break;
-    case LOG_LEVEL_INFO:    ss << "[ INFO:" << threadID << "] " << message << std::endl; break;
-    case LOG_LEVEL_DEBUG:   ss << "[DEBUG:" << threadID << "] " << message << std::endl; break;
+    case LOG_LEVEL_FATAL:   ss << "[FATAL:" << message_id << "] " << message << std::endl; break;
+    case LOG_LEVEL_ERROR:   ss << "[ERROR:" << message_id << "] " << message << std::endl; break;
+    case LOG_LEVEL_WARNING: ss << "[ WARN:" << message_id << "] " << message << std::endl; break;
+    case LOG_LEVEL_INFO:    ss << "[ INFO:" << message_id << "] " << message << std::endl; break;
+    case LOG_LEVEL_DEBUG:   ss << "[DEBUG:" << message_id << "] " << message << std::endl; break;
     case LOG_LEVEL_VERBOSE: ss << message << std::endl; break;
-    default:
-        return;
+    case LOG_LEVEL_SILENT: return;  // avoid compiler warning about incomplete switch
+    case ENUM_LOG_LEVEL_FORCE_INT: return;  // avoid compiler warning about incomplete switch
     }
 #ifdef __ANDROID__
     int android_logLevel = ANDROID_LOG_INFO;
@@ -212,30 +244,75 @@ void writeLogMessage(LogLevel logLevel, const char* message)
     std::ostream* out = (logLevel <= LOG_LEVEL_WARNING) ? &std::cerr : &std::cout;
     (*out) << ss.str();
     if (logLevel <= LOG_LEVEL_WARNING)
+    {
         (*out) << std::flush;
+    }
+}
+
+static const char* stripSourceFilePathPrefix(const char* file)
+{
+    CV_Assert(file);
+    const char* pos = file;
+    const char* strip_pos = NULL;
+    char ch = 0;
+    while ((ch = pos[0]) != 0)
+    {
+        ++pos;
+        if (ch == '/' || ch == '\\')
+            strip_pos = pos;
+    }
+    if (strip_pos == NULL || strip_pos == pos/*eos*/)
+        return file;
+    return strip_pos;
 }
 
 void writeLogMessageEx(LogLevel logLevel, const char* tag, const char* file, int line, const char* func, const char* message)
 {
+    WriteLogMessageExFuncType userFunc = stc_userWriteLogMessageExFunc.load();
+    if (userFunc && userFunc != writeLogMessageEx)
+    {
+        (*userFunc)(logLevel, tag, file, line, func, message);
+        return;
+    }
+
     std::ostringstream strm;
     if (tag)
     {
-        strm << tag << " ";
+        strm << tag << ' ';
     }
     if (file)
     {
-        strm << file << " ";
-    }
-    if (line > 0)
-    {
-        strm << "(" << line << ") ";
+        strm << stripSourceFilePathPrefix(file);
+        if (line > 0)
+        {
+            strm << ':' << line;
+        }
+        strm << ' ';
     }
     if (func)
     {
-        strm << func << " ";
+        strm << func << ' ';
     }
     strm << message;
     writeLogMessage(logLevel, strm.str().c_str());
+}
+
+void replaceWriteLogMessage(WriteLogMessageFuncType f)
+{
+    if (f == writeLogMessage)
+    {
+        f = nullptr;
+    }
+    stc_userWriteLogMessageFunc.store(f);
+}
+
+void replaceWriteLogMessageEx(WriteLogMessageExFuncType f)
+{
+    if (f == writeLogMessageEx)
+    {
+        f = nullptr;
+    }
+    stc_userWriteLogMessageExFunc.store(f);
 }
 
 } // namespace

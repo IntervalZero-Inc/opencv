@@ -38,8 +38,10 @@
 // the use of this software, even if advised of the possibility of such damage.
 //
 //M*/
+
 #include "precomp.hpp"
 #include "opencl_kernels_imgproc.hpp"
+#include "opencv2/core/hal/intrin.hpp"
 
 namespace cv
 {
@@ -50,7 +52,7 @@ static void completeMomentState( Moments* moments )
     double cx = 0, cy = 0;
     double mu20, mu11, mu02;
     double inv_m00 = 0.0;
-    assert( moments != 0 );
+    CV_Assert( moments != 0 );
 
     if( fabs(moments->m00) > DBL_EPSILON )
     {
@@ -211,7 +213,7 @@ struct MomentsInTile_SIMD
     }
 };
 
-#if CV_SSE2
+#if CV_SIMD128
 
 template <>
 struct MomentsInTile_SIMD<uchar, int, int>
@@ -226,114 +228,32 @@ struct MomentsInTile_SIMD<uchar, int, int>
         int x = 0;
 
         {
-            __m128i dx = _mm_set1_epi16(8);
-            __m128i z = _mm_setzero_si128(), qx0 = z, qx1 = z, qx2 = z, qx3 = z, qx = _mm_setr_epi16(0, 1, 2, 3, 4, 5, 6, 7);
+            v_int16x8 dx = v_setall_s16(8), qx = v_int16x8(0, 1, 2, 3, 4, 5, 6, 7);
+            v_uint32x4 z = v_setzero_u32(), qx0 = z, qx1 = z, qx2 = z, qx3 = z;
 
             for( ; x <= len - 8; x += 8 )
             {
-                __m128i p = _mm_unpacklo_epi8(_mm_loadl_epi64((const __m128i*)(ptr + x)), z);
-                __m128i sx = _mm_mullo_epi16(qx, qx);
+                v_int16x8 p = v_reinterpret_as_s16(v_load_expand(ptr + x));
+                v_int16x8 sx = v_mul_wrap(qx, qx);
 
-                qx0 = _mm_add_epi16(qx0, p);
-                qx1 = _mm_add_epi32(qx1, _mm_madd_epi16(p, qx));
-                qx2 = _mm_add_epi32(qx2, _mm_madd_epi16(p, sx));
-                qx3 = _mm_add_epi32(qx3, _mm_madd_epi16( _mm_mullo_epi16(p, qx), sx));
+                qx0 = v_add(qx0, v_reinterpret_as_u32(p));
+                qx1 = v_reinterpret_as_u32(v_dotprod(p, qx, v_reinterpret_as_s32(qx1)));
+                qx2 = v_reinterpret_as_u32(v_dotprod(p, sx, v_reinterpret_as_s32(qx2)));
+                qx3 = v_reinterpret_as_u32(v_dotprod(v_mul_wrap(p, qx), sx, v_reinterpret_as_s32(qx3)));
 
-                qx = _mm_add_epi16(qx, dx);
+                qx = v_add(qx, dx);
             }
 
-            __m128i qx01_lo = _mm_unpacklo_epi32(qx0, qx1);
-            __m128i qx23_lo = _mm_unpacklo_epi32(qx2, qx3);
-            __m128i qx01_hi = _mm_unpackhi_epi32(qx0, qx1);
-            __m128i qx23_hi = _mm_unpackhi_epi32(qx2, qx3);
-            qx01_lo = _mm_add_epi32(qx01_lo, qx01_hi);
-            qx23_lo = _mm_add_epi32(qx23_lo, qx23_hi);
-            __m128i qx0123_lo = _mm_unpacklo_epi64(qx01_lo, qx23_lo);
-            __m128i qx0123_hi = _mm_unpackhi_epi64(qx01_lo, qx23_lo);
-            qx0123_lo = _mm_add_epi32(qx0123_lo, qx0123_hi);
-            _mm_store_si128((__m128i*)buf, qx0123_lo);
-
-            x0 = (buf[0] & 0xffff) + (buf[0] >> 16);
-            x1 = buf[1];
-            x2 = buf[2];
-            x3 = buf[3];
+            x0 = v_reduce_sum(qx0);
+            x0 = (x0 & 0xffff) + (x0 >> 16);
+            x1 = v_reduce_sum(qx1);
+            x2 = v_reduce_sum(qx2);
+            x3 = v_reduce_sum(qx3);
         }
 
         return x;
     }
-
-    int CV_DECL_ALIGNED(16) buf[4];
 };
-
-#elif CV_NEON
-
-template <>
-struct MomentsInTile_SIMD<uchar, int, int>
-{
-    MomentsInTile_SIMD()
-    {
-        ushort CV_DECL_ALIGNED(8) init[4] = { 0, 1, 2, 3 };
-        qx_init = vld1_u16(init);
-        v_step = vdup_n_u16(4);
-    }
-
-    int operator() (const uchar * ptr, int len, int & x0, int & x1, int & x2, int & x3)
-    {
-        int x = 0;
-
-        uint32x4_t v_z = vdupq_n_u32(0), v_x0 = v_z, v_x1 = v_z,
-            v_x2 = v_z, v_x3 = v_z;
-        uint16x4_t qx = qx_init;
-
-        for( ; x <= len - 8; x += 8 )
-        {
-            uint16x8_t v_src = vmovl_u8(vld1_u8(ptr + x));
-
-            // first part
-            uint32x4_t v_qx = vmovl_u16(qx);
-            uint16x4_t v_p = vget_low_u16(v_src);
-            uint32x4_t v_px = vmull_u16(qx, v_p);
-
-            v_x0 = vaddw_u16(v_x0, v_p);
-            v_x1 = vaddq_u32(v_x1, v_px);
-            v_px = vmulq_u32(v_px, v_qx);
-            v_x2 = vaddq_u32(v_x2, v_px);
-            v_x3 = vaddq_u32(v_x3, vmulq_u32(v_px, v_qx));
-            qx = vadd_u16(qx, v_step);
-
-            // second part
-            v_qx = vmovl_u16(qx);
-            v_p = vget_high_u16(v_src);
-            v_px = vmull_u16(qx, v_p);
-
-            v_x0 = vaddw_u16(v_x0, v_p);
-            v_x1 = vaddq_u32(v_x1, v_px);
-            v_px = vmulq_u32(v_px, v_qx);
-            v_x2 = vaddq_u32(v_x2, v_px);
-            v_x3 = vaddq_u32(v_x3, vmulq_u32(v_px, v_qx));
-
-            qx = vadd_u16(qx, v_step);
-        }
-
-        vst1q_u32(buf, v_x0);
-        x0 = buf[0] + buf[1] + buf[2] + buf[3];
-        vst1q_u32(buf, v_x1);
-        x1 = buf[0] + buf[1] + buf[2] + buf[3];
-        vst1q_u32(buf, v_x2);
-        x2 = buf[0] + buf[1] + buf[2] + buf[3];
-        vst1q_u32(buf, v_x3);
-        x3 = buf[0] + buf[1] + buf[2] + buf[3];
-
-        return x;
-    }
-
-    uint CV_DECL_ALIGNED(16) buf[4];
-    uint16x4_t qx_init, v_step;
-};
-
-#endif
-
-#if CV_SSE4_1
 
 template <>
 struct MomentsInTile_SIMD<ushort, int, int64>
@@ -348,49 +268,39 @@ struct MomentsInTile_SIMD<ushort, int, int64>
         int x = 0;
 
         {
-            __m128i v_delta = _mm_set1_epi32(4), v_zero = _mm_setzero_si128(), v_x0 = v_zero,
-                v_x1 = v_zero, v_x2 = v_zero, v_x3 = v_zero, v_ix0 = _mm_setr_epi32(0, 1, 2, 3);
+            v_int32x4 v_delta = v_setall_s32(4), v_ix0 = v_int32x4(0, 1, 2, 3);
+            v_uint32x4 z = v_setzero_u32(), v_x0 = z, v_x1 = z, v_x2 = z;
+            v_uint64x2 v_x3 = v_reinterpret_as_u64(z);
 
             for( ; x <= len - 4; x += 4 )
             {
-                __m128i v_src = _mm_loadl_epi64((const __m128i *)(ptr + x));
-                v_src = _mm_unpacklo_epi16(v_src, v_zero);
+                v_int32x4 v_src = v_reinterpret_as_s32(v_load_expand(ptr + x));
 
-                v_x0 = _mm_add_epi32(v_x0, v_src);
-                v_x1 = _mm_add_epi32(v_x1, _mm_mullo_epi32(v_src, v_ix0));
+                v_x0 = v_add(v_x0, v_reinterpret_as_u32(v_src));
+                v_x1 = v_add(v_x1, v_reinterpret_as_u32(v_mul(v_src, v_ix0)));
 
-                __m128i v_ix1 = _mm_mullo_epi32(v_ix0, v_ix0);
-                v_x2 = _mm_add_epi32(v_x2, _mm_mullo_epi32(v_src, v_ix1));
+                v_int32x4 v_ix1 = v_mul(v_ix0, v_ix0);
+                v_x2 = v_add(v_x2, v_reinterpret_as_u32(v_mul(v_src, v_ix1)));
 
-                v_ix1 = _mm_mullo_epi32(v_ix0, v_ix1);
-                v_src = _mm_mullo_epi32(v_src, v_ix1);
-                v_x3 = _mm_add_epi64(v_x3, _mm_add_epi64(_mm_unpacklo_epi32(v_src, v_zero), _mm_unpackhi_epi32(v_src, v_zero)));
+                v_ix1 = v_mul(v_ix0, v_ix1);
+                v_src = v_mul(v_src, v_ix1);
+                v_uint64x2 v_lo, v_hi;
+                v_expand(v_reinterpret_as_u32(v_src), v_lo, v_hi);
+                v_x3 = v_add(v_x3, v_add(v_lo, v_hi));
 
-                v_ix0 = _mm_add_epi32(v_ix0, v_delta);
+                v_ix0 = v_add(v_ix0, v_delta);
             }
 
-            __m128i v_x01_lo = _mm_unpacklo_epi32(v_x0, v_x1);
-            __m128i v_x22_lo = _mm_unpacklo_epi32(v_x2, v_x2);
-            __m128i v_x01_hi = _mm_unpackhi_epi32(v_x0, v_x1);
-            __m128i v_x22_hi = _mm_unpackhi_epi32(v_x2, v_x2);
-            v_x01_lo = _mm_add_epi32(v_x01_lo, v_x01_hi);
-            v_x22_lo = _mm_add_epi32(v_x22_lo, v_x22_hi);
-            __m128i v_x0122_lo = _mm_unpacklo_epi64(v_x01_lo, v_x22_lo);
-            __m128i v_x0122_hi = _mm_unpackhi_epi64(v_x01_lo, v_x22_lo);
-            v_x0122_lo = _mm_add_epi32(v_x0122_lo, v_x0122_hi);
-            _mm_store_si128((__m128i*)buf64, v_x3);
-            _mm_store_si128((__m128i*)buf, v_x0122_lo);
-
-            x0 = buf[0];
-            x1 = buf[1];
-            x2 = buf[2];
+            x0 = v_reduce_sum(v_x0);
+            x1 = v_reduce_sum(v_x1);
+            x2 = v_reduce_sum(v_x2);
+            v_store_aligned(buf64, v_reinterpret_as_s64(v_x3));
             x3 = buf64[0] + buf64[1];
         }
 
         return x;
     }
 
-    int CV_DECL_ALIGNED(16) buf[4];
     int64 CV_DECL_ALIGNED(16) buf64[2];
 };
 
@@ -491,7 +401,7 @@ static bool ocl_moments( InputArray _src, Moments& m, bool binary)
     const int TILE_SIZE = 32;
     const int K = 10;
 
-    Size sz = _src.getSz();
+    Size sz = _src.size();
     int xtiles = divUp(sz.width, TILE_SIZE);
     int ytiles = divUp(sz.height, TILE_SIZE);
     int ntiles = xtiles*ytiles;
@@ -651,6 +561,37 @@ static bool ipp_moments(Mat &src, Moments &m )
 
 }
 
+namespace cv { namespace hal {
+
+static int moments(const cv::Mat& src, bool binary, cv::Moments& m)
+{
+    CV_INSTRUMENT_REGION();
+
+    double m_data[10];
+    int status = 0;
+    int type = src.type();
+    int depth = CV_MAT_DEPTH(type);
+
+    if( src.checkVector(2) >= 0 && (depth == CV_32F || depth == CV_32S))
+        status = cv_hal_polygonMoments(src.data, src.total()/2, src.type(), m_data);
+    else
+        status = cv_hal_imageMoments(src.data, src.step, src.type(), src.cols, src.rows, binary, m_data);
+
+    if (status == CV_HAL_ERROR_OK)
+    {
+        m = cv::Moments(m_data[0], m_data[1], m_data[2], m_data[3], m_data[4],
+                        m_data[5], m_data[6], m_data[7], m_data[8], m_data[9]);
+    }
+    else if (status != CV_HAL_ERROR_NOT_IMPLEMENTED)
+    {
+        CV_Error_(cv::Error::StsInternal,
+            ("HAL implementation moments ==> " CVAUX_STR(cv_hal_imageMoments) " returned %d (0x%08x)", status, status));
+    }
+
+    return status;
+}
+}}
+
 cv::Moments cv::moments( InputArray _src, bool binary )
 {
     CV_INSTRUMENT_REGION();
@@ -670,11 +611,15 @@ cv::Moments cv::moments( InputArray _src, bool binary )
 #endif
 
     Mat mat = _src.getMat();
+
+    if (hal::moments(mat, binary, m) == CV_HAL_ERROR_OK)
+        return m;
+
     if( mat.checkVector(2) >= 0 && (depth == CV_32F || depth == CV_32S))
         return contourMoments(mat);
 
     if( cn > 1 )
-        CV_Error( CV_StsBadArg, "Invalid image type (must be single-channel)" );
+        CV_Error( cv::Error::StsBadArg, "Invalid image type (must be single-channel)" );
 
     CV_IPP_RUN(!binary, ipp_moments(mat, m), m);
 
@@ -689,7 +634,7 @@ cv::Moments cv::moments( InputArray _src, bool binary )
     else if( depth == CV_64F )
         func = momentsInTile<double, double, double>;
     else
-        CV_Error( CV_StsUnsupportedFormat, "" );
+        CV_Error( cv::Error::StsUnsupportedFormat, "" );
 
     Mat src0(mat);
 
@@ -706,7 +651,7 @@ cv::Moments cv::moments( InputArray _src, bool binary )
             if( binary )
             {
                 cv::Mat tmp(tileSize, CV_8U, nzbuf);
-                cv::compare( src, 0, tmp, CV_CMP_NE );
+                cv::compare( src, 0, tmp, cv::CMP_NE );
                 src = tmp;
             }
 
@@ -820,9 +765,9 @@ CV_IMPL double cvGetSpatialMoment( CvMoments * moments, int x_order, int y_order
     int order = x_order + y_order;
 
     if( !moments )
-        CV_Error( CV_StsNullPtr, "" );
+        CV_Error( cv::Error::StsNullPtr, "" );
     if( (x_order | y_order) < 0 || order > 3 )
-        CV_Error( CV_StsOutOfRange, "" );
+        CV_Error( cv::Error::StsOutOfRange, "" );
 
     return (&(moments->m00))[order + (order >> 1) + (order > 2) * 2 + y_order];
 }
@@ -833,9 +778,9 @@ CV_IMPL double cvGetCentralMoment( CvMoments * moments, int x_order, int y_order
     int order = x_order + y_order;
 
     if( !moments )
-        CV_Error( CV_StsNullPtr, "" );
+        CV_Error( cv::Error::StsNullPtr, "" );
     if( (x_order | y_order) < 0 || order > 3 )
-        CV_Error( CV_StsOutOfRange, "" );
+        CV_Error( cv::Error::StsOutOfRange, "" );
 
     return order >= 2 ? (&(moments->m00))[4 + order * 3 + y_order] :
     order == 0 ? moments->m00 : 0;
@@ -858,7 +803,7 @@ CV_IMPL double cvGetNormalizedCentralMoment( CvMoments * moments, int x_order, i
 CV_IMPL void cvGetHuMoments( CvMoments * mState, CvHuMoments * HuState )
 {
     if( !mState || !HuState )
-        CV_Error( CV_StsNullPtr, "" );
+        CV_Error( cv::Error::StsNullPtr, "" );
 
     double m00s = mState->inv_sqrt_m00, m00 = m00s * m00s, s2 = m00 * m00, s3 = s2 * m00s;
 

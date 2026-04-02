@@ -9,8 +9,8 @@ if(ANDROID)
   ocv_include_directories(${CPUFEATURES_INCLUDE_DIRS})
 endif()
 
-file(GLOB lib_srcs src/dec/*.c src/demux/*.c src/dsp/*.c src/enc/*.c src/mux/*.c src/utils/*.c src/webp/*.c)
-file(GLOB lib_hdrs src/dec/*.h src/demux/*.h src/dsp/*.h src/enc/*.h src/mux/*.h src/utils/*.h src/webp/*.h)
+file(GLOB lib_srcs sharpyuv/*.c src/dec/*.c src/demux/*.c src/dsp/*.c src/enc/*.c src/mux/*.c src/utils/*.c src/webp/*.c)
+file(GLOB lib_hdrs sharpyuv/*.h src/dec/*.h src/demux/*.h src/dsp/*.h src/enc/*.h src/mux/*.h src/utils/*.h src/webp/*.h)
 
 # FIXIT
 if(ANDROID AND ARMEABI_V7A AND NOT NEON)
@@ -21,20 +21,27 @@ if(ANDROID AND ARMEABI_V7A AND NOT NEON)
   endforeach()
 endif()
 
-# FIX for quant.h - requires C99 for() loops
-ocv_check_flag_support(C "-std=c99" _varname "${CMAKE_C_FLAGS}")
-if(${_varname})
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
+if(WIN32)
+  foreach(file ${lib_srcs})
+    if("${file}" MATCHES "_avx2.c")
+      if(MSVC)
+        set_source_files_properties("${file}" COMPILE_FLAGS "/arch:AVX")
+      else()
+        set_source_files_properties("${file}" COMPILE_FLAGS "-mavx")
+      endif()
+    endif()
+  endforeach()
 endif()
-
 
 # ----------------------------------------------------------------------------------
 #         Define the library target:
 # ----------------------------------------------------------------------------------
 
-add_definitions(-DWEBP_USE_THREAD)
+if(NOT OPENCV_DISABLE_THREAD_SUPPORT)
+  add_definitions(-DWEBP_USE_THREAD)
+endif()
 
-add_library(${WEBP_LIBRARY} STATIC ${lib_srcs} ${lib_hdrs})
+add_library(${WEBP_LIBRARY} STATIC ${OPENCV_3RDPARTY_EXCLUDE_FROM_ALL} ${lib_srcs} ${lib_hdrs})
 if(ANDROID)
   target_link_libraries(${WEBP_LIBRARY} ${CPUFEATURES_LIBRARIES})
 endif()
@@ -43,6 +50,7 @@ ocv_warnings_disable(CMAKE_C_FLAGS -Wunused-variable -Wunused-function -Wshadow 
     -Wmissing-prototypes  # clang
     -Wmissing-declarations # gcc
     -Wimplicit-fallthrough
+    -Wunused-but-set-variable # clang15
 )
 ocv_warnings_disable(CMAKE_C_FLAGS /wd4244 /wd4267) # vs2005
 
@@ -59,6 +67,6 @@ if(ENABLE_SOLUTION_FOLDERS)
 endif()
 
 if(NOT BUILD_SHARED_LIBS)
-  ocv_install_target(${WEBP_LIBRARY} EXPORT OpenCVModules ARCHIVE DESTINATION ${OPENCV_3P_LIB_INSTALL_PATH} COMPONENT dev)
+  ocv_install_target(${WEBP_LIBRARY} EXPORT OpenCVModules ARCHIVE DESTINATION ${OPENCV_3P_LIB_INSTALL_PATH} COMPONENT dev OPTIONAL)
 endif()
 

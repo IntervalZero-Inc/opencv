@@ -73,7 +73,7 @@ public:
 protected:
 
     bool test_values(const cv::Mat& src);												// complex test for eigen without vectors
-    bool check_full(int type);													// compex test for symmetric matrix
+    bool check_full(int type);													// complex test for symmetric matrix
     virtual void run (int) = 0;													// main testing method
 
 protected:
@@ -367,7 +367,7 @@ bool Core_EigenTest::check_full(int type)
 
     for (int i = 0; i < ntests; ++i)
     {
-        int src_size = (int)(std::pow(2.0, (rng.uniform(0, MAX_DEGREE) + 1.)));
+        int src_size = (int)(std::pow(2, (rng.uniform(0, MAX_DEGREE) + 1.)));
 
         cv::Mat src(src_size, src_size, type);
 

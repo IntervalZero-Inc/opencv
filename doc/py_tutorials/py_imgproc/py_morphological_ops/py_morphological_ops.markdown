@@ -38,7 +38,8 @@ Here, as an example, I would use a 5x5 kernel with full of ones. Let's see it ho
 import cv2 as cv
 import numpy as np
 
-img = cv.imread('j.png',0)
+img = cv.imread('j.png', cv.IMREAD_GRAYSCALE)
+assert img is not None, "file could not be read, check with os.path.exists()"
 kernel = np.ones((5,5),np.uint8)
 erosion = cv.erode(img,kernel,iterations = 1)
 @endcode
@@ -48,7 +49,7 @@ Result:
 
 ### 2. Dilation
 
-It is just opposite of erosion. Here, a pixel element is '1' if atleast one pixel under the kernel
+It is just opposite of erosion. Here, a pixel element is '1' if at least one pixel under the kernel
 is '1'. So it increases the white region in the image or size of foreground object increases.
 Normally, in cases like noise removal, erosion is followed by dilation. Because, erosion removes
 white noises, but it also shrinks our object. So we dilate it. Since noise is gone, they won't come
@@ -146,11 +147,16 @@ array([[0, 0, 1, 0, 0],
        [1, 1, 1, 1, 1],
        [0, 0, 1, 0, 0],
        [0, 0, 1, 0, 0]], dtype=uint8)
+
+# Diamond-shaped Kernel
+>>> cv.getStructuringElement(cv.MORPH_DIAMOND,(5,5))
+array([[0, 0, 1, 0, 0],
+       [0, 1, 1, 1, 0],
+       [1, 1, 1, 1, 1],
+       [0, 1, 1, 1, 0],
+       [0, 0, 1, 0, 0]], dtype=uint8)
 @endcode
 Additional Resources
 --------------------
 
 -#  [Morphological Operations](http://homepages.inf.ed.ac.uk/rbf/HIPR2/morops.htm) at HIPR2
-
-Exercises
----------

@@ -46,19 +46,22 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <type_traits>
 #include <google/protobuf/message.h>
 #include <google/protobuf/text_format.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/reflection.h>
 #include "caffe_io.hpp"
 #endif
+
+#include <opencv2/core/utils/fp_control_utils.hpp>
 
 namespace cv {
 namespace dnn {
 CV__DNN_INLINE_NS_BEGIN
 
 #ifdef HAVE_PROTOBUF
-using ::google::protobuf::RepeatedField;
-using ::google::protobuf::RepeatedPtrField;
+using ::google::protobuf::RepeatedFieldRef;
 using ::google::protobuf::Message;
 using ::google::protobuf::Descriptor;
 using ::google::protobuf::FieldDescriptor;
@@ -75,18 +78,31 @@ static cv::String toString(const T &v)
     return ss.str();
 }
 
+static inline
+MatShape parseBlobShape(const caffe::BlobShape& _input_shape)
+{
+    MatShape shape;
+    for (int i = 0; i < _input_shape.dim_size(); i++)
+    {
+        shape.push_back((int)_input_shape.dim(i));
+    }
+    return shape;
+}
+
 class CaffeImporter
 {
+    FPDenormalsIgnoreHintScope fp_denormals_ignore_scope;
+
     caffe::NetParameter net;
     caffe::NetParameter netBinary;
 
 public:
 
-    CaffeImporter(const char *pototxt, const char *caffeModel)
+    CaffeImporter(const char *prototxt, const char *caffeModel)
     {
         CV_TRACE_FUNCTION();
 
-        ReadNetParamsFromTextFileOrDie(pototxt, &net);
+        ReadNetParamsFromTextFileOrDie(prototxt, &net);
 
         if (caffeModel && caffeModel[0])
             ReadNetParamsFromBinaryFileOrDie(caffeModel, &netBinary);
@@ -110,8 +126,9 @@ public:
         {
             const google::protobuf::UnknownField& field = unknownFields.field(i);
             CV_Assert(field.type() == google::protobuf::UnknownField::TYPE_GROUP);
-            std::string fieldName = field.group().field(0).length_delimited();
-            std::string fieldValue = field.group().field(1).length_delimited();
+            CV_CheckGE(field.group().field_count(), 2, "UnknownField should have at least 2 items: name and value");
+            std::string fieldName(field.group().field(0).length_delimited());
+            std::string fieldValue(field.group().field(1).length_delimited());
             params.set(fieldName, fieldValue);
         }
     }
@@ -121,11 +138,11 @@ public:
         const Reflection *refl = msg.GetReflection();
         int type = field->cpp_type();
         bool isRepeated = field->is_repeated();
-        const std::string &name = field->name();
+        const std::string name(field->name());
 
         #define SET_UP_FILED(getter, arrayConstr, gtype)                                    \
             if (isRepeated) {                                                               \
-                const RepeatedField<gtype> &v = refl->GetRepeatedField<gtype>(msg, field);  \
+                const RepeatedFieldRef<gtype> v = refl->GetRepeatedFieldRef<gtype>(msg, field);  \
                 params.set(name, DictValue::arrayConstr(v.begin(), (int)v.size()));                  \
             }                                                                               \
             else {                                                                          \
@@ -157,7 +174,7 @@ public:
             break;
         case FieldDescriptor::CPPTYPE_STRING:
             if (isRepeated) {
-                const RepeatedPtrField<std::string> &v = refl->GetRepeatedPtrField<std::string>(msg, field);
+                const RepeatedFieldRef<std::string> v = refl->GetRepeatedFieldRef<std::string>(msg, field);
                 params.set(name, DictValue::arrayString(v.begin(), (int)v.size()));
             }
             else {
@@ -173,12 +190,11 @@ public:
                 params.set(name, DictValue::arrayString(buf.begin(), size));
             }
             else {
-                params.set(name, refl->GetEnum(msg, field)->name());
+                params.set(name, std::string(refl->GetEnum(msg, field)->name()));
             }
             break;
         default:
             CV_Error(Error::StsError, "Unknown type \"" + String(field->type_name()) + "\" in prototxt");
-            break;
         }
     }
 
@@ -188,7 +204,9 @@ public:
         return (str.size() >= _param.size()) && str.compare(str.size() - _param.size(), _param.size(), _param) == 0;
     }
 
-    void extractLayerParams(const Message &msg, cv::dnn::LayerParams &params, bool isInternal = false)
+    template<class MSG>
+    typename std::enable_if<std::is_base_of<Message, MSG>::value, void>::type
+    extractLayerParams(const MSG &msg, cv::dnn::LayerParams &params, bool isInternal = false)
     {
         const Descriptor *msgDesc = msg.GetDescriptor();
         const Reflection *msgRefl = msg.GetReflection();
@@ -197,12 +215,12 @@ public:
         {
             const FieldDescriptor *fd = msgDesc->field(fieldId);
 
-            if (!isInternal && !ends_with_param(fd->name()))
+            if (!isInternal && !ends_with_param(std::string(fd->name())))
                 continue;
 
             const google::protobuf::UnknownFieldSet& unknownFields = msgRefl->GetUnknownFields(msg);
             bool hasData =  fd->is_required() ||
-                            (fd->is_optional() && msgRefl->HasField(msg, fd)) ||
+                            (!fd->is_repeated() && !fd->is_required() && msgRefl->HasField(msg, fd)) ||
                             (fd->is_repeated() && msgRefl->FieldSize(msg, fd) > 0) ||
                             !unknownFields.empty();
             if (!hasData)
@@ -223,6 +241,13 @@ public:
         }
     }
 
+    template<class MSG>
+    typename std::enable_if<!std::is_base_of<Message, MSG>::value, void>::type
+    extractLayerParams(const MSG &msg, cv::dnn::LayerParams &params, bool isInternal = false)
+    {
+        CV_Error(Error::StsError, "DNN/CAFFE: do not have your message be a MessageLite");
+    }
+
     void blobShapeFromProto(const caffe::BlobProto &pbBlob, MatShape& shape)
     {
         shape.clear();
@@ -235,13 +260,22 @@ public:
         }
         else if (pbBlob.has_shape())
         {
-            const caffe::BlobShape &_shape = pbBlob.shape();
-
-            for (int i = 0; i < _shape.dim_size(); i++)
-                shape.push_back((int)_shape.dim(i));
+            shape = parseBlobShape(pbBlob.shape());
         }
         else
             shape.resize(1, 1);  // Is a scalar.
+    }
+
+    template<class BLOB_PROTO>
+    typename std::enable_if<std::is_base_of<Message, BLOB_PROTO>::value, void>::type
+    AssertBlobProtoIsFloat(const BLOB_PROTO &pbBlob) {
+        CV_DbgAssert(pbBlob.GetDescriptor()->FindFieldByLowercaseName("data")->cpp_type() == FieldDescriptor::CPPTYPE_FLOAT);
+    }
+
+    template<class BLOB_PROTO>
+    typename std::enable_if<!std::is_base_of<Message, BLOB_PROTO>::value, void>::type
+    AssertBlobProtoIsFloat(const BLOB_PROTO &pbBlob) {
+        CV_Error(Error::StsError, "DNN/CAFFE: do not have your message be a MessageLite");
     }
 
     void blobFromProto(const caffe::BlobProto &pbBlob, cv::Mat &dstBlob)
@@ -255,7 +289,7 @@ public:
             // Single precision floats.
             CV_Assert(pbBlob.data_size() == (int)dstBlob.total());
 
-            CV_DbgAssert(pbBlob.GetDescriptor()->FindFieldByLowercaseName("data")->cpp_type() == FieldDescriptor::CPPTYPE_FLOAT);
+            AssertBlobProtoIsFloat(pbBlob);
             Mat(dstBlob.dims, &dstBlob.size[0], CV_32F, (void*)pbBlob.data().data()).copyTo(dstBlob);
         }
         else
@@ -267,8 +301,8 @@ public:
                 // Half precision floats.
                 CV_Assert(raw_data.size() / 2 == (int)dstBlob.total());
 
-                Mat halfs((int)shape.size(), &shape[0], CV_16SC1, (void*)raw_data.c_str());
-                convertFp16(halfs, dstBlob);
+                Mat halfs((int)shape.size(), &shape[0], CV_16FC1, (void*)raw_data.c_str());
+                halfs.convertTo(dstBlob, CV_32F);
             }
             else if (pbBlob.raw_data_type() == caffe::FLOAT)
             {
@@ -298,16 +332,13 @@ public:
 
         caffe::LayerParameter* binLayer = netBinary.mutable_layer(li);
         const int numBlobs = binLayer->blobs_size();
+        std::vector<caffe::BlobProto*> blobs(numBlobs);
+        binLayer->mutable_blobs()->ExtractSubrange(0, numBlobs, blobs.data());
         layerParams.blobs.resize(numBlobs);
         for (int bi = 0; bi < numBlobs; bi++)
         {
-            blobFromProto(binLayer->blobs(bi), layerParams.blobs[bi]);
-        }
-        binLayer->clear_blobs();
-        CV_Assert(numBlobs == binLayer->blobs().ClearedCount());
-        for (int bi = 0; bi < numBlobs; bi++)
-        {
-            delete binLayer->mutable_blobs()->ReleaseCleared();
+            blobFromProto(*blobs[bi], layerParams.blobs[bi]);
+            delete blobs[bi];
         }
     }
 
@@ -334,11 +365,48 @@ public:
 
         //setup input layer names
         std::vector<String> netInputs(net.input_size());
+        std::vector<MatShape> inp_shapes;
         {
-            for (int inNum = 0; inNum < net.input_size(); inNum++)
+            int net_input_size = net.input_size();
+            for (int inNum = 0; inNum < net_input_size; inNum++)
             {
                 addedBlobs.push_back(BlobNote(net.input(inNum), 0, inNum));
                 netInputs[inNum] = net.input(inNum);
+            }
+
+            if (net.input_dim_size() > 0)  // deprecated in Caffe proto
+            {
+                int net_input_dim_size = net.input_dim_size();
+                CV_Check(net_input_dim_size, net_input_dim_size % 4 == 0, "");
+                CV_CheckEQ(net_input_dim_size, net_input_size * 4, "");
+                for (int inp_id = 0; inp_id < net_input_size; inp_id++)
+                {
+                    int dim = inp_id * 4;
+                    MatShape shape(4);
+                    shape[0] = net.input_dim(dim);
+                    shape[1] = net.input_dim(dim+1);
+                    shape[2] = net.input_dim(dim+2);
+                    shape[3] = net.input_dim(dim+3);
+                    inp_shapes.push_back(shape);
+                }
+            }
+            else if (net.input_shape_size() > 0)  // deprecated in Caffe proto
+            {
+                int net_input_shape_size = net.input_shape_size();
+                CV_CheckEQ(net_input_shape_size, net_input_size, "");
+                for (int inp_id = 0; inp_id < net_input_shape_size; inp_id++)
+                {
+                    MatShape shape = parseBlobShape(net.input_shape(inp_id));
+                    inp_shapes.push_back(shape);
+                }
+            }
+            else
+            {
+                for (int inp_id = 0; inp_id < net_input_size; inp_id++)
+                {
+                    MatShape shape; // empty
+                    inp_shapes.push_back(shape);
+                }
             }
         }
 
@@ -363,6 +431,17 @@ public:
                     addOutput(layer, 0, outNum);
                     addedBlobs.back().outNum = netInputs.size();
                     netInputs.push_back(addedBlobs.back().name);
+                }
+                if (layer.has_input_param())
+                {
+                    const caffe::InputParameter &inputParameter = layer.input_param();
+                    int input_shape_size = inputParameter.shape_size();
+                    CV_CheckEQ(input_shape_size, layer.top_size(), "");
+                    for (int inp_id = 0; inp_id < input_shape_size; inp_id++)
+                    {
+                        MatShape shape = parseBlobShape(inputParameter.shape(inp_id));
+                        inp_shapes.push_back(shape);
+                    }
                 }
                 continue;
             }
@@ -409,9 +488,43 @@ public:
                 net.mutable_layer(li)->mutable_bottom()->RemoveLast();
                 type = "Eltwise";
             }
+            else if (type == "Resample")
+            {
+                CV_Assert(layer.bottom_size() == 1 || layer.bottom_size() == 2);
+                type = "Resize";
+                String interp = toLowerCase(layerParams.get<String>("type"));
+                layerParams.set("interpolation", interp == "linear" ? "bilinear" : interp);
+
+                if (layerParams.has("factor"))
+                {
+                    float factor = layerParams.get<float>("factor");
+                    CV_Assert(layer.bottom_size() != 2 || factor == 1.0);
+                    layerParams.set("zoom_factor", factor);
+
+                    if ((interp == "linear" && factor != 1.0) ||
+                        (interp == "nearest" && factor < 1.0))
+                        CV_Error(Error::StsNotImplemented, "Unsupported Resample mode");
+                }
+            }
+            else if ("Convolution" == type)
+            {
+                CV_Assert(layer.bottom_size() == layer.top_size());
+                for (int i = 0; i < layer.bottom_size(); i++)
+                {
+                    int conv_id = dstNet.addLayer(layer.top(i), type, layerParams);
+                    addInput(layer.bottom(i), conv_id, 0, dstNet);
+                    addedBlobs.push_back(BlobNote(layer.top(i), conv_id, 0));
+                }
+                continue;
+            }
             else if ("ConvolutionDepthwise" == type)
             {
                 type = "Convolution";
+            }
+            else if (type == "Softmax"){
+                // set default axis to 1
+                if(!layerParams.has("axis"))
+                    layerParams.set("axis", 1);
             }
 
             int id = dstNet.addLayer(name, type, layerParams);
@@ -423,6 +536,13 @@ public:
                 addOutput(layer, id, outNum);
         }
         dstNet.setInputsNames(netInputs);
+
+        if (inp_shapes.size() > 0)
+        {
+            CV_CheckEQ(inp_shapes.size(), netInputs.size(), "");
+            for (int inp_id = 0; inp_id < inp_shapes.size(); inp_id++)
+                dstNet.setInputShape(netInputs[inp_id], inp_shapes[inp_id]);
+        }
 
         addedBlobs.clear();
     }
@@ -463,7 +583,6 @@ public:
         if (idx < 0)
         {
             CV_Error(Error::StsObjectNotFound, "Can't find output blob \"" + name + "\"");
-            return;
         }
 
         dstNet.connect(addedBlobs[idx].layerId, addedBlobs[idx].outNum, layerId, inNum);
@@ -498,7 +617,23 @@ Net readNetFromCaffe(const std::vector<uchar>& bufferProto, const std::vector<uc
                             bufferModelPtr, bufferModel.size());
 }
 
-#endif //HAVE_PROTOBUF
+#else  // HAVE_PROTOBUF
+
+#define DNN_PROTOBUF_UNSUPPORTED() CV_Error(Error::StsError, "DNN/Caffe: Build OpenCV with Protobuf to import Caffe models")
+
+Net readNetFromCaffe(const String &, const String &) {
+    DNN_PROTOBUF_UNSUPPORTED();
+}
+
+Net readNetFromCaffe(const char *, size_t, const char *, size_t) {
+    DNN_PROTOBUF_UNSUPPORTED();
+}
+
+Net readNetFromCaffe(const std::vector<uchar>&, const std::vector<uchar>&) {
+    DNN_PROTOBUF_UNSUPPORTED();
+}
+
+#endif  // HAVE_PROTOBUF
 
 CV__DNN_INLINE_NS_END
 }} // namespace

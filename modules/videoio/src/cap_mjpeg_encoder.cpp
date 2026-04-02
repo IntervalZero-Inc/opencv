@@ -95,7 +95,7 @@ static bool createEncodeHuffmanTable( const int* src, unsigned* table, int max_s
 
     if( size > max_size )
     {
-        CV_Error(CV_StsOutOfRange, "too big maximum Huffman code size");
+        CV_Error(cv::Error::StsOutOfRange, "too big maximum Huffman code size");
     }
 
     memset( table, 0, size*sizeof(table[0]));
@@ -268,7 +268,7 @@ public:
             m_buffer_list[0].finish();
 
             m_data_len = m_buffer_list[0].get_len();
-            m_last_bit_len = m_buffer_list[0].get_bits_free() ? 32 - m_buffer_list[0].get_bits_free() : 0;
+            m_last_bit_len = 32 - m_buffer_list[0].get_bits_free();
 
             return m_buffer_list[0].get_data();
         }
@@ -331,9 +331,14 @@ public:
         }
 
         //bits == 0 means that last element shouldn't be used.
-        m_output_buffer[m_data_len++] = currval;
-
-        m_last_bit_len = -bits;
+        if (bits != 0) {
+            m_output_buffer[m_data_len++] = currval;
+            m_last_bit_len = -bits;
+        }
+        else
+        {
+            m_last_bit_len = 32;
+        }
 
         return &m_output_buffer[0];
     }
@@ -482,7 +487,7 @@ public:
             colorspace = COLORSPACE_YUV444P;
         }
         else
-            CV_Error(CV_StsBadArg, "Invalid combination of specified video colorspace and the input image colorspace");
+            CV_Error(cv::Error::StsBadArg, "Invalid combination of specified video colorspace and the input image colorspace");
 
         if( !rawstream ) {
             int avi_index = container.getAVIIndex(0, dc);
@@ -1176,6 +1181,7 @@ public:
         {
             if(height*width > min_pixels_count)
             {
+                const int default_stripes_count = 4;
                 stripes_count = default_stripes_count;
             }
         }
@@ -1370,10 +1376,7 @@ private:
     const short (&fdct_qtab)[2][64];
     const uchar* cat_table;
     int stripes_count;
-    static const int default_stripes_count;
 };
-
-const int MjpegEncoder::default_stripes_count = 4;
 
 void MotionJpegWriter::writeFrameData( const uchar* data, int step, int colorspace, int input_channels )
 {
@@ -1532,12 +1535,15 @@ void MotionJpegWriter::writeFrameData( const uchar* data, int step, int colorspa
 
 }
 
-Ptr<IVideoWriter> createMotionJpegWriter(const std::string &filename, int fourcc, double fps, const Size &frameSize, bool iscolor)
+Ptr<IVideoWriter> createMotionJpegWriter(const std::string& filename, int fourcc,
+                                         double fps, const Size& frameSize,
+                                         const VideoWriterParameters& params)
 {
     if (fourcc != CV_FOURCC('M', 'J', 'P', 'G'))
         return Ptr<IVideoWriter>();
 
-    Ptr<IVideoWriter> iwriter = makePtr<mjpeg::MotionJpegWriter>(filename, fps, frameSize, iscolor);
+    const bool isColor = params.get(VIDEOWRITER_PROP_IS_COLOR, true);
+    Ptr<IVideoWriter> iwriter = makePtr<mjpeg::MotionJpegWriter>(filename, fps, frameSize, isColor);
     if( !iwriter->isOpened() )
         iwriter.release();
     return iwriter;

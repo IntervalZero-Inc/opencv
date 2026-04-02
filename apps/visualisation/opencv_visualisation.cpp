@@ -60,6 +60,7 @@ Created by: Puttemans Steven - April 2016
 
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 using namespace std;
 using namespace cv;
@@ -86,6 +87,9 @@ int main( int argc, const char** argv )
         "{ image i        |      | (required) path to reference image }"
         "{ model m        |      | (required) path to cascade xml file }"
         "{ data d         |      | (optional) path to video output folder }"
+        "{ ext            | avi  | (optional) output video file extension e.g. avi (default) or mp4 }"
+        "{ fourcc         | XVID | (optional) output video file's 4-character codec e.g. XVID (default) or H264 }"
+        "{ fps            |   15 | (optional) output video file's frames-per-second rate }"
     );
     // Read in the input arguments
     if (parser.has("help")){
@@ -96,7 +100,9 @@ int main( int argc, const char** argv )
     string model(parser.get<string>("model"));
     string output_folder(parser.get<string>("data"));
     string image_ref = (parser.get<string>("image"));
-    if (model.empty() || image_ref.empty()){
+    string fourcc = (parser.get<string>("fourcc"));
+    int fps = parser.get<int>("fps");
+    if (model.empty() || image_ref.empty() || fourcc.size()!=4 || fps<1){
         parser.printMessage();
         printLimits();
         return -1;
@@ -107,7 +113,7 @@ int main( int argc, const char** argv )
     int timing = 1;
 
     // Value for cols of storing elements
-    int cols_prefered = 5;
+    int cols_preferred = 5;
 
     // Open the XML model
     FileStorage fs;
@@ -166,11 +172,19 @@ int main( int argc, const char** argv )
     // each stage, containing all weak classifiers for that stage.
     bool draw_planes = false;
     stringstream output_video;
-    output_video << output_folder << "model_visualization.avi";
+    output_video << output_folder << "model_visualization." << parser.get<string>("ext");
     VideoWriter result_video;
     if( output_folder.compare("") != 0 ){
         draw_planes = true;
-        result_video.open(output_video.str(), VideoWriter::fourcc('X','V','I','D'), 15, Size(reference_image.cols * resize_factor, reference_image.rows * resize_factor), false);
+        result_video.open(output_video.str(), VideoWriter::fourcc(fourcc[0],fourcc[1],fourcc[2],fourcc[3]), fps, visualization.size(), false);
+        if (!result_video.isOpened()){
+            cerr << "the output video '" << output_video.str() << "' could not be opened."
+                 << " fourcc=" << fourcc
+                 << " fps=" << fps
+                 << " frameSize=" << visualization.size()
+                 << endl;
+            return -1;
+        }
     }
 
     if(haar){
@@ -204,7 +218,7 @@ int main( int argc, const char** argv )
         for(int sid = 0; sid < (int)stage_features.size(); sid ++){
             if(draw_planes){
                 int features_nmbr = (int)stage_features[sid].size();
-                int cols = cols_prefered;
+                int cols = cols_preferred;
                 int rows = features_nmbr / cols;
                 if( (features_nmbr % cols) > 0){
                     rows++;
@@ -243,7 +257,7 @@ int main( int argc, const char** argv )
                 result_video.write(temp_window);
                 // Copy the feature image if needed
                 if(draw_planes){
-                    single_feature.copyTo(image_plane(Rect(0 + (fid%cols_prefered)*single_feature.cols, 0 + (fid/cols_prefered) * single_feature.rows, single_feature.cols, single_feature.rows)));
+                    single_feature.copyTo(image_plane(Rect(0 + (fid%cols_preferred)*single_feature.cols, 0 + (fid/cols_preferred) * single_feature.rows, single_feature.cols, single_feature.rows)));
                 }
                 putText(temp_metadata, meta1.str(), Point(15,15), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255));
                 putText(temp_metadata, meta2.str(), Point(15,40), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255));
@@ -277,7 +291,7 @@ int main( int argc, const char** argv )
         for(int sid = 0; sid < (int)stage_features.size(); sid ++){
             if(draw_planes){
                 int features_nmbr = (int)stage_features[sid].size();
-                int cols = cols_prefered;
+                int cols = cols_preferred;
                 int rows = features_nmbr / cols;
                 if( (features_nmbr % cols) > 0){
                     rows++;
@@ -339,7 +353,7 @@ int main( int argc, const char** argv )
                     // Bottom right
                     rectangle(single_feature, Rect(resized_inner.x + 2*resized_inner.width, resized_inner.y + 2*resized_inner.height, resized_inner.width, resized_inner.height), Scalar(255), 1);
 
-                    single_feature.copyTo(image_plane(Rect(0 + (fid%cols_prefered)*single_feature.cols, 0 + (fid/cols_prefered) * single_feature.rows, single_feature.cols, single_feature.rows)));
+                    single_feature.copyTo(image_plane(Rect(0 + (fid%cols_preferred)*single_feature.cols, 0 + (fid/cols_preferred) * single_feature.rows, single_feature.cols, single_feature.rows)));
                 }
 
                 putText(temp_metadata, meta1.str(), Point(15,15), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255));

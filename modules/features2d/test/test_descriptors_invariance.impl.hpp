@@ -3,14 +3,39 @@
 // of this distribution and at http://opencv.org/license.html
 
 #include "test_invariance_utils.hpp"
+#include <functional>
 
 namespace opencv_test { namespace {
 
 #define SHOW_DEBUG_LOG 1
 
-typedef tuple<std::string, Ptr<FeatureDetector>, Ptr<DescriptorExtractor>, float>
+// NOTE: using factory function (function<Ptr<Type>()>) instead of object instance (Ptr<Type>) as a
+// test parameter, because parameters exist during whole test program run and consume a lot of memory
+typedef std::function<cv::Ptr<cv::FeatureDetector>()> DetectorFactory;
+typedef std::function<cv::Ptr<cv::DescriptorExtractor>()> ExtractorFactory;
+typedef tuple<std::string, DetectorFactory, ExtractorFactory, float>
     String_FeatureDetector_DescriptorExtractor_Float_t;
 
+
+static
+void SetSuitableSIFTOctave(vector<KeyPoint>& keypoints,
+                             int firstOctave = -1, int nOctaveLayers = 3, double sigma = 1.6)
+{
+    for (size_t i = 0; i < keypoints.size(); i++ )
+    {
+        int octv, layer;
+        KeyPoint& kpt = keypoints[i];
+        double octv_layer = std::log(kpt.size / sigma) / std::log(2.) - 1;
+        octv = cvFloor(octv_layer);
+        layer = cvRound( (octv_layer - octv) * nOctaveLayers );
+        if (octv < firstOctave)
+        {
+            octv = firstOctave;
+            layer = 0;
+        }
+        kpt.octave = (layer << 8) | (octv & 255);
+    }
+}
 
 static
 void rotateKeyPoints(const vector<KeyPoint>& src, const Mat& H, float angle, vector<KeyPoint>& dst)
@@ -41,8 +66,8 @@ protected:
         image0 = imread(filename);
         ASSERT_FALSE(image0.empty()) << "couldn't read input image";
 
-        featureDetector = get<1>(GetParam());
-        descriptorExtractor = get<2>(GetParam());
+        featureDetector = get<1>(GetParam())();
+        descriptorExtractor = get<2>(GetParam())();
         minInliersRatio = get<3>(GetParam());
     }
 
@@ -129,6 +154,10 @@ TEST_P(DescriptorScaleInvariance, scale)
 
         vector<KeyPoint> keypoints1;
         scaleKeyPoints(keypoints0, keypoints1, 1.0f/scale);
+        if (featureDetector->getDefaultName() == "Feature2D.SIFT")
+        {
+            SetSuitableSIFTOctave(keypoints1);
+        }
         Mat descriptors1;
         descriptorExtractor->compute(image1, keypoints1, descriptors1);
 

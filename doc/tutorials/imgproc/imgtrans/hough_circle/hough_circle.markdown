@@ -1,8 +1,15 @@
 Hough Circle Transform {#tutorial_hough_circle}
 ======================
 
+@tableofcontents
+
 @prev_tutorial{tutorial_hough_lines}
-@next_tutorial{tutorial_remap}
+@next_tutorial{tutorial_generalized_hough_ballard_guil}
+
+|    |    |
+| -: | :- |
+| Original author | Ana Huamán |
+| Compatibility | OpenCV >= 3.0 |
 
 Goal
 ----
@@ -44,83 +51,83 @@ Code
 
 @add_toggle_cpp
 The sample code that we will explain can be downloaded from
-[here](https://raw.githubusercontent.com/opencv/opencv/master/samples/cpp/tutorial_code/ImgTrans/houghcircles.cpp).
+[here](https://raw.githubusercontent.com/opencv/opencv/4.x/samples/cpp/tutorial_code/ImgTrans/houghcircles.cpp).
 A slightly fancier version (which shows trackbars for changing the threshold values) can be found
-[here](https://raw.githubusercontent.com/opencv/opencv/master/samples/cpp/tutorial_code/ImgTrans/HoughCircle_Demo.cpp).
+[here](https://raw.githubusercontent.com/opencv/opencv/4.x/samples/cpp/tutorial_code/ImgTrans/HoughCircle_Demo.cpp).
 @include samples/cpp/tutorial_code/ImgTrans/houghcircles.cpp
 @end_toggle
 
 @add_toggle_java
 The sample code that we will explain can be downloaded from
-[here](https://raw.githubusercontent.com/opencv/opencv/master/samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java).
+[here](https://raw.githubusercontent.com/opencv/opencv/4.x/samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java).
 @include samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java
 @end_toggle
 
 @add_toggle_python
 The sample code that we will explain can be downloaded from
-[here](https://raw.githubusercontent.com/opencv/opencv/master/samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py).
+[here](https://raw.githubusercontent.com/opencv/opencv/4.x/samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py).
 @include samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py
 @end_toggle
 
 Explanation
 -----------
 
-The image we used can be found [here](https://raw.githubusercontent.com/opencv/opencv/master/samples/data/smarties.png)
+The image we used can be found [here](https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/smarties.png)
 
-####  Load an image:
+###  Load an image:
 
 @add_toggle_cpp
 @snippet samples/cpp/tutorial_code/ImgTrans/houghcircles.cpp load
 @end_toggle
 
 @add_toggle_java
-@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py load
-@end_toggle
-
-@add_toggle_python
 @snippet samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java load
 @end_toggle
 
-####  Convert it to grayscale:
+@add_toggle_python
+@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py load
+@end_toggle
+
+###  Convert it to grayscale:
 
 @add_toggle_cpp
 @snippet samples/cpp/tutorial_code/ImgTrans/houghcircles.cpp convert_to_gray
 @end_toggle
 
 @add_toggle_java
-@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py convert_to_gray
-@end_toggle
-
-@add_toggle_python
 @snippet samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java convert_to_gray
 @end_toggle
 
-#### Apply a Median blur to reduce noise and avoid false circle detection:
+@add_toggle_python
+@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py convert_to_gray
+@end_toggle
+
+### Apply a Median blur to reduce noise and avoid false circle detection:
 
 @add_toggle_cpp
 @snippet samples/cpp/tutorial_code/ImgTrans/houghcircles.cpp reduce_noise
 @end_toggle
 
 @add_toggle_java
-@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py reduce_noise
-@end_toggle
-
-@add_toggle_python
 @snippet samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java reduce_noise
 @end_toggle
 
-#### Proceed to apply Hough Circle Transform:
+@add_toggle_python
+@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py reduce_noise
+@end_toggle
+
+### Proceed to apply Hough Circle Transform:
 
 @add_toggle_cpp
 @snippet samples/cpp/tutorial_code/ImgTrans/houghcircles.cpp houghcircles
 @end_toggle
 
 @add_toggle_java
-@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py houghcircles
+@snippet samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java houghcircles
 @end_toggle
 
 @add_toggle_python
-@snippet samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java houghcircles
+@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py houghcircles
 @end_toggle
 
 -   with the arguments:
@@ -137,34 +144,34 @@ The image we used can be found [here](https://raw.githubusercontent.com/opencv/o
     -   *min_radius = 0*: Minimum radius to be detected. If unknown, put zero as default.
     -   *max_radius = 0*: Maximum radius to be detected. If unknown, put zero as default.
 
-####  Draw the detected circles:
+###  Draw the detected circles:
 
 @add_toggle_cpp
 @snippet samples/cpp/tutorial_code/ImgTrans/houghcircles.cpp draw
 @end_toggle
 
 @add_toggle_java
-@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py draw
+@snippet samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java draw
 @end_toggle
 
 @add_toggle_python
-@snippet samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java draw
+@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py draw
 @end_toggle
 
 You can see that we will draw the circle(s) on red and the center(s) with a small green dot
 
-####  Display the detected circle(s) and wait for the user to exit the program:
+###  Display the detected circle(s) and wait for the user to exit the program:
 
 @add_toggle_cpp
 @snippet samples/cpp/tutorial_code/ImgTrans/houghcircles.cpp display
 @end_toggle
 
 @add_toggle_java
-@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py display
+@snippet samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java display
 @end_toggle
 
 @add_toggle_python
-@snippet samples/java/tutorial_code/ImgTrans/HoughCircle/HoughCircles.java display
+@snippet samples/python/tutorial_code/ImgTrans/HoughCircle/hough_circle.py display
 @end_toggle
 
 Result

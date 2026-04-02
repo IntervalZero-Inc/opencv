@@ -17,7 +17,6 @@
 
 #include "d3dsample.hpp"
 
-#pragma comment (lib, "d3d11.lib")
 
 class D3D11WinApp : public D3DSample
 {
@@ -83,7 +82,7 @@ public:
         r = m_pD3D11SwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&m_pBackBuffer);
         if (FAILED(r))
         {
-            throw std::runtime_error("GetBufer() failed!");
+            throw std::runtime_error("GetBuffer() failed!");
         }
 
         r = m_pD3D11Dev->CreateRenderTargetView(m_pBackBuffer, NULL, &m_pRenderTarget);
@@ -374,7 +373,7 @@ public:
             r = m_pD3D11SwapChain->Present(0, 0);
             if (FAILED(r))
             {
-                throw std::runtime_error("switch betweem fronat and back buffers failed!");
+                throw std::runtime_error("switch between fronat and back buffers failed!");
             }
         } // try
 

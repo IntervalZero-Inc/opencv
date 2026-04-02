@@ -4,9 +4,9 @@ Arithmetic Operations on Images {#tutorial_js_image_arithmetics}
 Goal
 ----
 
--   Learn several arithmetic operations on images like addition, subtraction, bitwise operations
+-   Learn several arithmetic operations on images like addition, subtraction, bitwise operations,
     etc.
--   You will learn these functions : **cv.add()**, **cv.subtract()**  etc.
+-   You will learn these functions : **cv.add()**, **cv.subtract()**,  etc.
 
 Image Addition
 --------------
@@ -27,7 +27,7 @@ src1.delete(); src2.delete(); dst.delete(); mask.delete();
 Image Subtraction
 --------------
 
-You can subtract two images by OpenCV function, cv.subtract(). res = img1 - img2. Both images should be of same depth and type.
+You can subtract two images by OpenCV function, cv.subtract(). res = img1 - img2. Both images should be of same depth and type. Note that when used with RGBA images, the alpha channel is also subtracted.
 
 For example, consider below sample:
 @code{.js}

@@ -55,7 +55,7 @@ Ptr<SeamFinder> SeamFinder::createDefault(int type)
         return makePtr<VoronoiSeamFinder>();
     if (type == DP_SEAM)
         return makePtr<DpSeamFinder>();
-    CV_Error(Error::StsBadArg, "unsupported exposure compensation method");
+    CV_Error(Error::StsBadArg, "unsupported seam finder method");
 }
 
 
@@ -338,8 +338,8 @@ void DpSeamFinder::findComponents()
                     states_.push_back(SECOND);
 
                 floodFill(labels_, Point(x, y), ++ncomps_);
-                tls_.push_back(Point(x, y));
-                brs_.push_back(Point(x+1, y+1));
+                tls_.emplace_back(x,y);
+                brs_.emplace_back(x+1, y+1);
                 contours_.push_back(std::vector<Point>());
             }
 
@@ -356,7 +356,7 @@ void DpSeamFinder::findComponents()
                 if ((x == 0 || labels_(y, x-1) != l) || (x == unionSize_.width-1 || labels_(y, x+1) != l) ||
                     (y == 0 || labels_(y-1, x) != l) || (y == unionSize_.height-1 || labels_(y+1, x) != l))
                 {
-                    contours_[ci].push_back(Point(x, y));
+                    contours_[ci].emplace_back(x,y);
                 }
             }
         }
@@ -517,7 +517,7 @@ void DpSeamFinder::resolveConflicts(
                             if ((x == 0 || labels_(y, x-1) != l[i]) || (x == unionSize_.width-1 || labels_(y, x+1) != l[i]) ||
                                 (y == 0 || labels_(y-1, x) != l[i]) || (y == unionSize_.height-1 || labels_(y+1, x) != l[i]))
                             {
-                                contours_[c[i]].push_back(Point(x, y));
+                                contours_[c[i]].emplace_back(x,y);
                             }
                         }
                     }
@@ -587,8 +587,8 @@ void DpSeamFinder::computeGradients(const Mat &image1, const Mat &image2)
 bool DpSeamFinder::hasOnlyOneNeighbor(int comp)
 {
     std::set<std::pair<int, int> >::iterator begin, end;
-    begin = lower_bound(edges_.begin(), edges_.end(), std::make_pair(comp, std::numeric_limits<int>::min()));
-    end = upper_bound(edges_.begin(), edges_.end(), std::make_pair(comp, std::numeric_limits<int>::max()));
+    begin = edges_.lower_bound(std::make_pair(comp, std::numeric_limits<int>::min()));
+    end = edges_.upper_bound(std::make_pair(comp, std::numeric_limits<int>::max()));
     return ++begin == end;
 }
 
@@ -637,7 +637,7 @@ bool DpSeamFinder::getSeamTips(int comp1, int comp2, Point &p1, Point &p2)
              (x < unionSize_.width-1 && labels_(y, x+1) == l2) ||
              (y < unionSize_.height-1 && labels_(y+1, x) == l2)))
         {
-            specialPoints.push_back(Point(x, y));
+            specialPoints.emplace_back(x,y);
         }
     }
 
@@ -778,7 +778,9 @@ void DpSeamFinder::computeCosts(
     {
         for (int x = roi.x; x < roi.br().x+1; ++x)
         {
-            if (labels_(y, x) == l && x > 0 && labels_(y, x-1) == l)
+            if (x > 0 && x < labels_.cols &&
+                labels_(y, x) == l && labels_(y, x-1) == l
+            )
             {
                 float costColor = (diff(image1, y + dy1, x + dx1 - 1, image2, y + dy2, x + dx2) +
                                    diff(image1, y + dy1, x + dx1, image2, y + dy2, x + dx2 - 1)) / 2;
@@ -802,7 +804,9 @@ void DpSeamFinder::computeCosts(
     {
         for (int x = roi.x; x < roi.br().x; ++x)
         {
-            if (labels_(y, x) == l && y > 0 && labels_(y-1, x) == l)
+            if (y > 0 && y < labels_.rows &&
+                labels_(y, x) == l && labels_(y-1, x) == l
+            )
             {
                 float costColor = (diff(image1, y + dy1 - 1, x + dx1, image2, y + dy2, x + dx2) +
                                    diff(image1, y + dy1, x + dx1, image2, y + dy2 - 1, x + dx2)) / 2;

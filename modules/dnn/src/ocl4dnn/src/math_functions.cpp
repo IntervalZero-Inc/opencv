@@ -46,6 +46,8 @@
 #include <vector>
 #include "opencl_kernels_dnn.hpp"
 
+#include "opencv2/core/utils/logger.hpp"
+
 namespace cv { namespace dnn { namespace ocl4dnn {
 
 enum gemm_data_type_t
@@ -86,13 +88,13 @@ ocl::Image2D ocl4dnnGEMMCopyBufferToImage(UMat buffer, int offset,
             size_t global_copy[2];
             global_copy[0] = width;
             global_copy[1] = height;
-            oclk_gemm_copy.set(0, ocl::KernelArg::PtrReadOnly(buffer));
-            oclk_gemm_copy.set(1, image);
-            oclk_gemm_copy.set(2, offset);
-            oclk_gemm_copy.set(3, width);
-            oclk_gemm_copy.set(4, height);
-            oclk_gemm_copy.set(5, ld);
-            oclk_gemm_copy.run(2, global_copy, NULL, false);
+            oclk_gemm_copy
+                .args(
+                    ocl::KernelArg::PtrReadOnly(buffer),
+                    image, offset,
+                    width, height,
+                    ld)
+                .run(2, global_copy, NULL, false);
         }
     } else {
         if (!padding)
@@ -110,14 +112,15 @@ ocl::Image2D ocl4dnnGEMMCopyBufferToImage(UMat buffer, int offset,
             global_copy[0] = padded_width;
             global_copy[1] = padded_height;
 
-            oclk_gemm_copy.set(0, ocl::KernelArg::PtrReadOnly(buffer));
-            oclk_gemm_copy.set(1, image);
-            oclk_gemm_copy.set(2, offset);
-            oclk_gemm_copy.set(3, width);
-            oclk_gemm_copy.set(4, height);
-            oclk_gemm_copy.set(5, ld);
-
-            oclk_gemm_copy.run(2, global_copy, NULL, false);
+            bool res = oclk_gemm_copy
+                .args(
+                    ocl::KernelArg::PtrReadOnly(buffer),
+                    image, offset,
+                    padded_width, padded_height,
+                    width, height,
+                    ld)
+                .run(2, global_copy, NULL, false);
+            CV_Assert(res);
         }
     }
 
@@ -153,7 +156,7 @@ static bool ocl4dnnFastImageGEMM(const CBLAS_TRANSPOSE TransA,
     CHECK_EQ(gemm_type == GEMM_TYPE_FAST_IMAGE_32_1 || gemm_type == GEMM_TYPE_FAST_IMAGE_32_2 ||
              gemm_type == GEMM_TYPE_FAST_IMAGE_B_IMAGE, true) << "Invalid fast image gemm type." << std::endl;
 
-    bool halfPrecisionMode = (A.depth() == CV_16S);
+    bool halfPrecisionMode = (A.depth() == CV_16F);
 
     if (is_image_a)
     {
@@ -237,10 +240,6 @@ static bool ocl4dnnFastImageGEMM(const CBLAS_TRANSPOSE TransA,
     } else {
         kernel_name += "_float";
     }
-
-    ocl::Kernel oclk_gemm_float(kernel_name.c_str(), ocl::dnn::gemm_image_oclsrc, opts);
-    if (oclk_gemm_float.empty())
-        return false;
 
     while (C_start_y < M)
     {
@@ -348,6 +347,10 @@ static bool ocl4dnnFastImageGEMM(const CBLAS_TRANSPOSE TransA,
             }
             local[1] = 1;
 
+            ocl::Kernel oclk_gemm_float(kernel_name.c_str(), ocl::dnn::gemm_image_oclsrc, opts);
+            if (oclk_gemm_float.empty())
+                return false;
+
             cl_uint arg_idx = 0;
             if (is_image_a)
                 oclk_gemm_float.set(arg_idx++, ocl::KernelArg::PtrReadOnly(A));
@@ -378,7 +381,10 @@ static bool ocl4dnnFastImageGEMM(const CBLAS_TRANSPOSE TransA,
             oclk_gemm_float.set(arg_idx++, isFirstColBlock);
 
             if (!oclk_gemm_float.run(2, global, local, false))
+            {
+                CV_LOG_WARNING(NULL, "OpenCL kernel enqueue failed: " << kernel_name);
                 return false;
+            }
 
             if (TransA == CblasNoTrans)
                 A_start_x += blockA_width;
@@ -433,7 +439,7 @@ static bool ocl4dnnFastBufferGEMM(const CBLAS_TRANSPOSE TransA,
     CHECK_EQ(gemm_type == GEMM_TYPE_FAST_BUFFER, true)
              << "Invalid fast buffer gemm type." << std::endl;
 
-    bool halfPrecisionMode = (A.depth() == CV_16S);
+    bool halfPrecisionMode = (A.depth() == CV_16F);
 
     size_t sub_group_size = 8;
     bool is_small_batch = (M == 2 || M == 4 || M == 8);
@@ -460,8 +466,12 @@ static bool ocl4dnnFastBufferGEMM(const CBLAS_TRANSPOSE TransA,
         kernel_name += "_float";
     }
 
+    bool isBetaZero = beta == 0;
+
     String opts = format("-DTYPE=%d", halfPrecisionMode ? TYPE_HALF : TYPE_FLOAT);
-    ocl::Kernel oclk_gemm_float(kernel_name.c_str(), ocl::dnn::gemm_buffer_oclsrc, opts);
+    if (isBetaZero)
+        opts += " -DZERO_BETA=1";
+
     size_t local[2] = {};
     size_t global[2] = {};
     if (TransA == CblasNoTrans && TransB != CblasNoTrans && is_small_batch) {
@@ -491,27 +501,37 @@ static bool ocl4dnnFastBufferGEMM(const CBLAS_TRANSPOSE TransA,
         local[1] = ly;
     }
 
-    int arg_idx = 0;
-    oclk_gemm_float.set(arg_idx++, ocl::KernelArg::PtrReadOnly(A));
-    oclk_gemm_float.set(arg_idx++, offA);
-    oclk_gemm_float.set(arg_idx++, ocl::KernelArg::PtrReadOnly(B));
-    oclk_gemm_float.set(arg_idx++, offB);
-    oclk_gemm_float.set(arg_idx++, ocl::KernelArg::PtrWriteOnly(C));
-    oclk_gemm_float.set(arg_idx++, offC);
-    oclk_gemm_float.set(arg_idx++, M);
-    oclk_gemm_float.set(arg_idx++, N);
-    oclk_gemm_float.set(arg_idx++, K);
-    oclk_gemm_float.set(arg_idx++, (float)alpha);
-    oclk_gemm_float.set(arg_idx++, (float)beta);
-
     bool ret = true;
-    if (TransB == CblasNoTrans || TransA != CblasNoTrans) {
+    if (TransB == CblasNoTrans || TransA != CblasNoTrans)
+    {
+        // _NN_
         int stride = 256;
         for (int start_index = 0; start_index < K; start_index += stride) {
-            oclk_gemm_float.set(arg_idx, start_index);
-            ret = oclk_gemm_float.run(2, global, local, false);
+            ocl::Kernel oclk_gemm_float(kernel_name.c_str(), ocl::dnn::gemm_buffer_oclsrc, opts);
+            oclk_gemm_float.args(
+                ocl::KernelArg::PtrReadOnly(A), offA,
+                ocl::KernelArg::PtrReadOnly(B), offB,
+                isBetaZero ? ocl::KernelArg::PtrWriteOnly(C) : ocl::KernelArg::PtrReadWrite(C), offC,
+                M, N, K,
+                (float)alpha, (float)beta,
+                start_index
+            );
+            ret &= oclk_gemm_float.run(2, global, local, false);
         }
-    } else {
+    }
+    else
+    {
+        // _NT_
+        //C.reshape(1,1).setTo(0xfe00 /*FP16 NAN*/);  // stable one-line reproducer for https://github.com/opencv/opencv/issues/18937
+        //C.reshape(1,1).setTo(0);  // non-optimal fixup (and not accurate)
+        ocl::Kernel oclk_gemm_float(kernel_name.c_str(), ocl::dnn::gemm_buffer_oclsrc, opts);
+        oclk_gemm_float.args(
+            ocl::KernelArg::PtrReadOnly(A), offA,
+            ocl::KernelArg::PtrReadOnly(B), offB,
+            isBetaZero ? ocl::KernelArg::PtrWriteOnly(C) : ocl::KernelArg::PtrReadWrite(C), offC,
+            M, N, K,
+            (float)alpha, (float)beta
+        );
         ret = oclk_gemm_float.run(2, global, local, false);
     }
     return ret;
@@ -524,7 +544,7 @@ bool ocl4dnnGEMMCommon(const CBLAS_TRANSPOSE TransB,
                        const UMat B_image, UMat C,
                        const size_t max_image_size)
 {
-    bool halfPrecisionMode = (A.depth() == CV_16S);
+    bool halfPrecisionMode = (A.depth() == CV_16F);
     gemm_type_t gemm_type = halfPrecisionMode ? GEMM_TYPE_FAST_BUFFER : GEMM_TYPE_FAST_IMAGE_32_1;
 
     if (gemm_type == GEMM_TYPE_FAST_IMAGE_32_1 ||
@@ -574,7 +594,7 @@ bool ocl4dnnGEMV<float>(const CBLAS_TRANSPOSE TransA,
                  const int32_t offy)
 {
     bool ret = false;
-    bool use_half = (A.depth() == CV_16S);
+    bool use_half = (A.depth() == CV_16F);
     String opts;
     if (use_half)
         opts = format("-DDtype=%s -DDtype4=%s -Dconvert_Dtype=convert_%s", "half", "half4", "half");
@@ -645,7 +665,7 @@ bool ocl4dnnAXPY(const int32_t N, const Dtype alpha,
                  const UMat X, const int32_t offX, UMat Y,
                  const int32_t offY)
 {
-    bool use_half = (X.depth() == CV_16S);
+    bool use_half = (X.depth() == CV_16F);
     String opts;
     if (use_half)
         opts = "-DDtype=half -DDtype4=half4 -Dconvert_Dtype=convert_half";

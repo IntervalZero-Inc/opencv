@@ -15,72 +15,104 @@ PyObject* pyopencv_from(const cvflann_flann_distance_t& value)
 }
 
 template<>
-bool pyopencv_to(PyObject *o, cv::flann::IndexParams& p, const char *name)
+bool pyopencv_to(PyObject *o, cv::flann::IndexParams& p, const ArgInfo& info)
 {
-    CV_UNUSED(name);
-    bool ok = true;
-    PyObject* key = NULL;
-    PyObject* item = NULL;
-    Py_ssize_t pos = 0;
-
     if (!o || o == Py_None)
+    {
         return true;
+    }
 
-    if(PyDict_Check(o)) {
-        while(PyDict_Next(o, &pos, &key, &item))
+    if(!PyDict_Check(o))
+    {
+        failmsg("Argument '%s' is not a dictionary", info.name);
+        return false;
+    }
+
+    PyObject* key_obj = NULL;
+    PyObject* value_obj = NULL;
+    Py_ssize_t key_pos = 0;
+
+    while(PyDict_Next(o, &key_pos, &key_obj, &value_obj))
+    {
+        // get key
+        std::string key;
+        if (!getUnicodeString(key_obj, key))
         {
-            // get key
-            std::string k;
-            if (!getUnicodeString(key, k))
+            failmsg("Key at pos %lld is not a string", static_cast<int64_t>(key_pos));
+            return false;
+        }
+        // key_arg_info.name is bound to key lifetime
+        const ArgInfo key_arg_info(key.c_str(), false);
+
+        // get value
+        if (isBool(value_obj))
+        {
+            npy_bool npy_value = NPY_FALSE;
+            if (PyArray_BoolConverter(value_obj, &npy_value) >= 0)
             {
-                ok = false;
-                break;
+                p.setBool(key, npy_value == NPY_TRUE);
+                continue;
             }
-            // get value
-            if( !!PyBool_Check(item) )
+            PyErr_Clear();
+        }
+
+        int int_value = 0;
+        if (pyopencv_to(value_obj, int_value, key_arg_info))
+        {
+            if (key == "algorithm")
             {
-                p.setBool(k, item == Py_True);
-            }
-            else if( PyInt_Check(item) )
-            {
-                int value = (int)PyInt_AsLong(item);
-                if( strcmp(k.c_str(), "algorithm") == 0 )
-                    p.setAlgorithm(value);
-                else
-                    p.setInt(k, value);
-            }
-            else if( PyFloat_Check(item) )
-            {
-                double value = PyFloat_AsDouble(item);
-                p.setDouble(k, value);
+                p.setAlgorithm(int_value);
             }
             else
             {
-                std::string val_str;
-                if (!getUnicodeString(item, val_str))
-                {
-                    ok = false;
-                    break;
-                }
-                p.setString(k, val_str);
+                p.setInt(key, int_value);
             }
+            continue;
         }
+        PyErr_Clear();
+
+        double flt_value = 0.0;
+        if (pyopencv_to(value_obj, flt_value, key_arg_info))
+        {
+            if (key == "eps")
+            {
+                p.setFloat(key, static_cast<float>(flt_value));
+            }
+            else
+            {
+                p.setDouble(key, flt_value);
+            }
+            continue;
+        }
+        PyErr_Clear();
+
+        std::string str_value;
+        if (getUnicodeString(value_obj, str_value))
+        {
+            p.setString(key, str_value);
+            continue;
+        }
+        PyErr_Clear();
+        // All conversions are failed
+        failmsg("Failed to parse IndexParam with key '%s'. "
+                "Supported types: [bool, int, float, str]", key.c_str());
+        return false;
+
     }
-
-    return ok && !PyErr_Occurred();
+    return true;
 }
 
 template<>
-bool pyopencv_to(PyObject* obj, cv::flann::SearchParams & value, const char * name)
+bool pyopencv_to(PyObject* obj, cv::flann::SearchParams & value, const ArgInfo& info)
 {
-    return pyopencv_to<cv::flann::IndexParams>(obj, value, name);
+    return pyopencv_to<cv::flann::IndexParams>(obj, value, info);
 }
 
 template<>
-bool pyopencv_to(PyObject *o, cvflann::flann_distance_t& dist, const char *name)
+bool pyopencv_to(PyObject *o, cvflann::flann_distance_t& dist, const ArgInfo& info)
 {
     int d = (int)dist;
-    bool ok = pyopencv_to(o, d, name);
+    bool ok = pyopencv_to(o, d, info);
     dist = (cvflann::flann_distance_t)d;
     return ok;
 }

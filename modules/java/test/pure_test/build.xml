@@ -6,6 +6,7 @@
 
   <property name="opencv.test.package" value="*"/>
   <property name="opencv.test.class" value="*"/>
+  <property name="opencv.test.exclude" value=""/>
 
   <path id="master-classpath">
     <fileset dir="lib">
@@ -41,7 +42,7 @@
 
   <target name="test" depends="jar">
     <mkdir dir="${test.dir}"/>
-    <junit printsummary="withOutAndErr" haltonfailure="false" haltonerror="false" showoutput="true" logfailedtests="true" maxmemory="256m">
+    <junit printsummary="withOutAndErr" failureproperty="junit_test.failed" haltonfailure="false" haltonerror="false" showoutput="true" logfailedtests="true" maxmemory="256m">
       <sysproperty key="java.library.path" path="${opencv.lib.path}"/>
       <env key="PATH" path="${opencv.lib.path}:${env.PATH}:${env.Path}"/>
       <env key="DYLD_LIBRARY_PATH" path="${env.OPENCV_SAVED_DYLD_LIBRARY_PATH}"/>  <!-- https://github.com/opencv/opencv/issues/14353 -->
@@ -53,7 +54,7 @@
       <formatter type="xml"/>
 
       <batchtest fork="yes" todir="${test.dir}">
-        <zipfileset src="build/jar/opencv-test.jar" includes="**/${opencv.test.package}/${opencv.test.class}.class" excludes="**/OpenCVTest*">
+        <zipfileset src="build/jar/opencv-test.jar" includes="**/${opencv.test.package}/${opencv.test.class}.class" excludes="**/OpenCVTest*, ${opencv.test.exclude}">
           <exclude name="**/*$*.class"/>
         </zipfileset>
       </batchtest>
@@ -64,6 +65,7 @@
       </fileset>
       <report format="noframes" todir="${test.dir}"/>
     </junitreport>
+    <fail message="JUnit test execution failed" if="junit_test.failed"/>
   </target>
 
   <target name="build" depends="jar">

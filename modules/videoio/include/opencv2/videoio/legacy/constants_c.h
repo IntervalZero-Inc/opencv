@@ -5,6 +5,8 @@
 #ifndef OPENCV_VIDEOIO_LEGACY_CONSTANTS_H
 #define OPENCV_VIDEOIO_LEGACY_CONSTANTS_H
 
+#include "opencv2/core/cvdef.h"
+
 enum
 {
     CV_CAP_ANY      =0,     // autodetect
@@ -225,8 +227,8 @@ enum
     CV_CAP_PROP_XI_COOLING                                      = 466, // Start camera cooling.
     CV_CAP_PROP_XI_TARGET_TEMP                                  = 467, // Set sensor target temperature for cooling.
     CV_CAP_PROP_XI_CHIP_TEMP                                    = 468, // Camera sensor temperature
-    CV_CAP_PROP_XI_HOUS_TEMP                                    = 469, // Camera housing tepmerature
-    CV_CAP_PROP_XI_HOUS_BACK_SIDE_TEMP                          = 590, // Camera housing back side tepmerature
+    CV_CAP_PROP_XI_HOUS_TEMP                                    = 469, // Camera housing temperature
+    CV_CAP_PROP_XI_HOUS_BACK_SIDE_TEMP                          = 590, // Camera housing back side temperature
     CV_CAP_PROP_XI_SENSOR_BOARD_TEMP                            = 596, // Camera sensor board temperature
     CV_CAP_PROP_XI_CMS                                          = 470, // Mode of color management system.
     CV_CAP_PROP_XI_APPLY_CMS                                    = 471, // Enable applying of CMS profiles to xiGetImage (see XI_PRM_INPUT_CMS_PROFILE, XI_PRM_OUTPUT_CMS_PROFILE).
@@ -340,9 +342,9 @@ enum
     CV_CAP_PROP_GIGA_FRAME_OFFSET_X = 10001,
     CV_CAP_PROP_GIGA_FRAME_OFFSET_Y = 10002,
     CV_CAP_PROP_GIGA_FRAME_WIDTH_MAX = 10003,
-    CV_CAP_PROP_GIGA_FRAME_HEIGH_MAX = 10004,
+    CV_CAP_PROP_GIGA_FRAME_HEIGHT_MAX = 10004,
     CV_CAP_PROP_GIGA_FRAME_SENS_WIDTH = 10005,
-    CV_CAP_PROP_GIGA_FRAME_SENS_HEIGH = 10006,
+    CV_CAP_PROP_GIGA_FRAME_SENS_HEIGHT = 10006,
 
     CV_CAP_PROP_INTELPERC_PROFILE_COUNT               = 11001,
     CV_CAP_PROP_INTELPERC_PROFILE_IDX                 = 11002,
@@ -409,22 +411,6 @@ enum
     CV_CAP_PROP_EXPOSUREPROGRAM           = 17009, // Camera exposure program.
     CV_CAP_PROP_VIEWFINDER                = 17010  // Enter liveview mode.
 };
-
-//! Macro to construct the fourcc code of the codec. Same as CV_FOURCC()
-#define CV_FOURCC_MACRO(c1, c2, c3, c4) (((c1) & 255) + (((c2) & 255) << 8) + (((c3) & 255) << 16) + (((c4) & 255) << 24))
-
-/** @brief Constructs the fourcc code of the codec function
-
-Simply call it with 4 chars fourcc code like `CV_FOURCC('I', 'Y', 'U', 'V')`
-
-List of codes can be obtained at [Video Codecs by FOURCC](http://www.fourcc.org/codecs.php) page.
-FFMPEG backend with MP4 container natively uses other values as fourcc code:
-see [ObjectType](http://www.mp4ra.org/codecs.html).
-*/
-CV_INLINE int CV_FOURCC(char c1, char c2, char c3, char c4)
-{
-    return CV_FOURCC_MACRO(c1, c2, c3, c4);
-}
 
 //! (Windows only) Open Codec Selection Dialog
 #define CV_FOURCC_PROMPT -1

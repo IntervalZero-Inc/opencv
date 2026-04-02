@@ -47,6 +47,8 @@
 #include <iterator>
 #include <limits>
 
+#include "usac.hpp"
+
 namespace cv
 {
 
@@ -99,55 +101,60 @@ public:
         return nz;
     }
 
-    bool getSubset( const Mat& m1, const Mat& m2,
-                    Mat& ms1, Mat& ms2, RNG& rng,
-                    int maxAttempts=1000 ) const
+    bool getSubset( const Mat& m1, const Mat& m2, Mat& ms1, Mat& ms2, RNG& rng, int maxAttempts=1000 ) const
     {
         cv::AutoBuffer<int> _idx(modelPoints);
         int* idx = _idx.data();
-        int i = 0, j, k, iters = 0;
-        int d1 = m1.channels() > 1 ? m1.channels() : m1.cols;
-        int d2 = m2.channels() > 1 ? m2.channels() : m2.cols;
-        int esz1 = (int)m1.elemSize1()*d1, esz2 = (int)m2.elemSize1()*d2;
-        int count = m1.checkVector(d1), count2 = m2.checkVector(d2);
-        const int *m1ptr = m1.ptr<int>(), *m2ptr = m2.ptr<int>();
+
+        const int d1 = m1.channels() > 1 ? m1.channels() : m1.cols;
+        const int d2 = m2.channels() > 1 ? m2.channels() : m2.cols;
+
+        int esz1 = (int)m1.elemSize1() * d1;
+        int esz2 = (int)m2.elemSize1() * d2;
+        CV_Assert((esz1 % sizeof(int)) == 0 && (esz2 % sizeof(int)) == 0);
+        esz1 /= sizeof(int);
+        esz2 /= sizeof(int);
+
+        const int count = m1.checkVector(d1);
+        const int count2 = m2.checkVector(d2);
+        CV_Assert(count >= modelPoints && count == count2);
+
+        const int *m1ptr = m1.ptr<int>();
+        const int *m2ptr = m2.ptr<int>();
 
         ms1.create(modelPoints, 1, CV_MAKETYPE(m1.depth(), d1));
         ms2.create(modelPoints, 1, CV_MAKETYPE(m2.depth(), d2));
 
-        int *ms1ptr = ms1.ptr<int>(), *ms2ptr = ms2.ptr<int>();
+        int *ms1ptr = ms1.ptr<int>();
+        int *ms2ptr = ms2.ptr<int>();
 
-        CV_Assert( count >= modelPoints && count == count2 );
-        CV_Assert( (esz1 % sizeof(int)) == 0 && (esz2 % sizeof(int)) == 0 );
-        esz1 /= sizeof(int);
-        esz2 /= sizeof(int);
-
-        for(; iters < maxAttempts; iters++)
+        for( int iters = 0; iters < maxAttempts; ++iters )
         {
-            for( i = 0; i < modelPoints && iters < maxAttempts; )
+            int i;
+
+            for( i = 0; i < modelPoints; ++i )
             {
-                int idx_i = 0;
-                for(;;)
-                {
-                    idx_i = idx[i] = rng.uniform(0, count);
-                    for( j = 0; j < i; j++ )
-                        if( idx_i == idx[j] )
-                            break;
-                    if( j == i )
-                        break;
-                }
-                for( k = 0; k < esz1; k++ )
+                int idx_i;
+
+                for ( idx_i = rng.uniform(0, count);
+                    std::find(idx, idx + i, idx_i) != idx + i;
+                    idx_i = rng.uniform(0, count) )
+                {}
+
+                idx[i] = idx_i;
+
+                for( int k = 0; k < esz1; ++k )
                     ms1ptr[i*esz1 + k] = m1ptr[idx_i*esz1 + k];
-                for( k = 0; k < esz2; k++ )
+
+                for( int k = 0; k < esz2; ++k )
                     ms2ptr[i*esz2 + k] = m2ptr[idx_i*esz2 + k];
-                i++;
             }
-            if( i == modelPoints && !cb->checkSubset(ms1, ms2, i) )
-                continue;
-            break;
+
+            if( cb->checkSubset(ms1, ms2, i) )
+                return true;
         }
 
-        return i == modelPoints && iters < maxAttempts;
+        return false;
     }
 
     bool run(InputArray _m1, InputArray _m2, OutputArray _model, OutputArray _mask) const CV_OVERRIDE
@@ -483,13 +490,13 @@ public:
             for(j = 0; j < i; ++j)
             {
                 Point3f d1 = ptr[j] - ptr[i];
-                float n1 = d1.x*d1.x + d1.y*d1.y;
+                float n1 = d1.x*d1.x + d1.y*d1.y + d1.z*d1.z;
 
                 for(k = 0; k < j; ++k)
                 {
                     Point3f d2 = ptr[k] - ptr[i];
-                    float denom = (d2.x*d2.x + d2.y*d2.y)*n1;
-                    float num = d1.x*d2.x + d1.y*d2.y;
+                    float denom = (d2.x*d2.x + d2.y*d2.y + d2.z*d2.z)*n1;
+                    float num = d1.x*d2.x + d1.y*d2.y + d1.z*d2.z;
 
                     if( num*num > threshold*threshold*denom )
                         return false;
@@ -499,6 +506,86 @@ public:
         return true;
     }
 };
+
+
+/*
+ * Compute
+ *  x      X     t1
+ *  y  =   Y  +  t2
+ *  z      Z     t3
+ *
+ *  - every element in _m1 contains (X,Y,Z), which are called source points
+ *  - every element in _m2 contains (x,y,z), which are called destination points
+ *  - _model is of size 3x1, which contains
+ *      t1
+ *      t2
+ *      t3
+ */
+class Translation3DEstimatorCallback CV_FINAL : public PointSetRegistrator::Callback
+{
+public:
+    int runKernel( InputArray _m1, InputArray _m2, OutputArray _model ) const CV_OVERRIDE
+    {
+
+        Mat m1 = _m1.getMat(), m2 = _m2.getMat();
+        const Point3f* from = m1.ptr<Point3f>();
+        const Point3f* to   = m2.ptr<Point3f>();
+
+        Matx13d T;
+
+        // The optimal translation is the mean of the pointwise displacements
+        for(int i = 0; i < 4; i++)
+        {
+            const Point3f& f = from[i];
+            const Point3f& t = to[i];
+
+            T(0, 0) = T(0, 0) + t.x - f.x;
+            T(0, 1) = T(0, 1) + t.y - f.y;
+            T(0, 2) = T(0, 2) + t.z - f.z;
+        }
+        T *= (1.0f / 4);
+        Mat(T, false).copyTo(_model);
+        return 1;
+    }
+
+    void computeError( InputArray _m1, InputArray _m2, InputArray _model, OutputArray _err ) const CV_OVERRIDE
+    {
+        Mat m1 = _m1.getMat(), m2 = _m2.getMat(), model = _model.getMat();
+        const Point3f* from = m1.ptr<Point3f>();
+        const Point3f* to   = m2.ptr<Point3f>();
+        const double* F = model.ptr<double>();
+
+        int count = m1.checkVector(3);
+        CV_Assert( count > 0 );
+
+        _err.create(count, 1, CV_32F);
+        Mat err = _err.getMat();
+        float* errptr = err.ptr<float>();
+
+        for(int i = 0; i < count; i++ )
+        {
+            const Point3f& f = from[i];
+            const Point3f& t = to[i];
+
+            double a = F[0] + f.x - t.x;
+            double b = F[1] + f.y - t.y;
+            double c = F[2] + f.z - t.z;
+
+            errptr[i] = (float)(a*a + b*b + c*c);
+        }
+    }
+
+    // not doing SVD, no degeneracy concerns, can simply return true
+    bool checkSubset( InputArray _ms1, InputArray _ms2, int count ) const CV_OVERRIDE
+    {
+        // voids to suppress compiler warnings
+        (void)_ms1;
+        (void)_ms2;
+        (void)count;
+        return true;
+    }
+};
+
 
 /*
  * Compute
@@ -675,6 +762,74 @@ public:
     }
 };
 
+/*
+ * Compute
+ *      x      1  0     X     t_x
+ *          =          *    +
+ *      y      0  1     Y     t_y
+ *
+ *  - every element in _m1 contains (X, Y), which are called source points
+ *  - every element in _m2 contains (x, y), which are called destination points
+ *  - _model is of size 2x3, which contains
+ *      1  0  t_x
+ *      0  1  t_y
+ *
+ *  Minimal sample size: 1
+ *  - For a single correspondence, the optimal translation equals the pointwise
+ *    displacement (to - from). The robust framework (RANSAC/LMEDS) selects
+ *    inlier sets using the reprojection error and refits the model.
+ */
+class Translation2DEstimatorCallback : public cv::PointSetRegistrator::Callback
+{
+public:
+    // Fit translation using the minimal subset (1 sample): displacement of the first pair.
+    // The robust framework ensures consensus on larger sets; a closed-form LS refit
+    // (mean displacement) can be applied after inlier selection.
+    int runKernel(cv::InputArray _m1, cv::InputArray _m2, cv::OutputArray _model) const CV_OVERRIDE
+    {
+        cv::Mat m1 = _m1.getMat(), m2 = _m2.getMat();
+        const auto* from = m1.ptr<cv::Point2f>();
+        const auto* to   = m2.ptr<cv::Point2f>();
+        const int n = m1.checkVector(2);
+        if (n < 1) return 0;
+
+        // Minimal model from a single correspondence
+        const double tx = (double)to[0].x - (double)from[0].x;
+        const double ty = (double)to[0].y - (double)from[0].y;
+
+        _model.create(2, 3, CV_64F);
+        double* H = _model.getMat().ptr<double>();
+        H[0]=1.0; H[1]=0.0; H[2]=tx;
+        H[3]=0.0; H[4]=1.0; H[5]=ty;
+        return 1;
+    }
+
+    // Return squared L2 reprojection error (pixels^2), as used by affine estimators.
+    void computeError(cv::InputArray _m1, cv::InputArray _m2,
+                      cv::InputArray _model, cv::OutputArray _err) const CV_OVERRIDE
+    {
+        cv::Mat m1 = _m1.getMat(), m2 = _m2.getMat();
+        const auto* from = m1.ptr<cv::Point2f>();
+        const auto* to   = m2.ptr<cv::Point2f>();
+        const int n = m1.checkVector(2);
+
+        const double* H = _model.getMat().ptr<double>(); // [1 0 tx; 0 1 ty]
+        // Cast once to float for inner loop speed
+        const float tx = (float)H[2];
+        const float ty = (float)H[5];
+
+        _err.create(n, 1, CV_32F);
+        float* e = _err.getMat().ptr<float>();
+
+        for (int i = 0; i < n; ++i) {
+            // residual = (from + t) - to
+            const float rx = (float)from[i].x + tx - (float)to[i].x;
+            const float ry = (float)from[i].y + ty - (float)to[i].y;
+            e[i] = rx*rx + ry*ry;   // squared L2 (pixels^2)
+        }
+    }
+};
+
 class Affine2DRefineCallback : public LMSolver::Callback
 {
 public:
@@ -789,6 +944,59 @@ public:
     Mat src, dst;
 };
 
+class Translation2DRefineCallback : public cv::LMSolver::Callback {
+public:
+    Translation2DRefineCallback(cv::InputArray _src, cv::InputArray _dst) {
+        src = _src.getMat();
+        dst = _dst.getMat();
+    }
+
+    // param: 6x1 [a b c d e f], only c (tx) and f (ty) are used
+    bool compute(cv::InputArray _param, cv::OutputArray _err, cv::OutputArray _Jac) const CV_OVERRIDE
+    {
+        const int count = src.checkVector(2);
+        CV_Assert(count > 0);
+
+        cv::Mat param = _param.getMat();   // CV_64F, 6x1
+        const double* h = param.ptr<double>();
+        const float tx = (float)h[2];
+        const float ty = (float)h[5];
+
+        _err.create(count * 2, 1, CV_64F);
+        cv::Mat err = _err.getMat();
+        double* errptr = err.ptr<double>();
+
+        cv::Mat J;
+        double* Jptr = nullptr;
+        if (_Jac.needed()) {
+            _Jac.create(count * 2, 6, CV_64F);
+            J = _Jac.getMat();
+            Jptr = J.ptr<double>();
+        }
+
+        const cv::Point2f* M = src.ptr<cv::Point2f>();
+        const cv::Point2f* m = dst.ptr<cv::Point2f>();
+
+        for (int i = 0; i < count; ++i)
+        {
+            // residuals
+            errptr[2*i + 0] = (double)M[i].x + tx - (double)m[i].x;
+            errptr[2*i + 1] = (double)M[i].y + ty - (double)m[i].y;
+
+            // Jacobian (only translation terms vary)
+            if (Jptr) {
+                Jptr[0] = 0.; Jptr[1] = 0.; Jptr[2] = 1.; Jptr[3] = 0.; Jptr[4] = 0.; Jptr[5] = 0.;
+                Jptr[6] = 0.; Jptr[7] = 0.; Jptr[8] = 0.; Jptr[9] = 0.; Jptr[10]= 0.; Jptr[11]= 1.;
+                Jptr += 12; // 2 rows × 6 cols
+            }
+        }
+        return true;
+    }
+
+private:
+    cv::Mat src, dst; // N×1 CV_32FC2
+};
+
 int estimateAffine3D(InputArray _from, InputArray _to,
                      OutputArray _out, OutputArray _inliers,
                      double ransacThreshold, double confidence)
@@ -813,11 +1021,120 @@ int estimateAffine3D(InputArray _from, InputArray _to,
     return createRANSACPointSetRegistrator(makePtr<Affine3DEstimatorCallback>(), 4, ransacThreshold, confidence)->run(dFrom, dTo, _out, _inliers);
 }
 
+Mat    estimateAffine3D(InputArray _from, InputArray _to,
+                        CV_OUT double* _scale, bool force_rotation)
+{
+    CV_INSTRUMENT_REGION();
+    Mat from = _from.getMat(), to = _to.getMat();
+    int count = from.checkVector(3);
+
+    CV_CheckGE(count, 3, "Umeyama algorithm needs at least 3 points for affine transformation estimation.");
+    CV_CheckEQ(to.checkVector(3), count, "Point sets need to have the same size");
+    from = from.reshape(1, count);
+    to = to.reshape(1, count);
+    if(from.type() != CV_64F)
+        from.convertTo(from, CV_64F);
+    if(to.type() != CV_64F)
+        to.convertTo(to, CV_64F);
+
+    const double one_over_n = 1./count;
+
+    const auto colwise_mean = [one_over_n](const Mat& m)
+    {
+        Mat my;
+        reduce(m, my, 0, REDUCE_SUM, CV_64F);
+        return my * one_over_n;
+    };
+
+    const auto demean = [count](const Mat& A, const Mat& mean)
+    {
+        Mat A_centered = Mat::zeros(count, 3, CV_64F);
+        for(int i = 0; i < count; i++)
+        {
+            A_centered.row(i) = A.row(i) - mean;
+        }
+        return A_centered;
+    };
+
+    Mat from_mean = colwise_mean(from);
+    Mat to_mean = colwise_mean(to);
+
+    Mat from_centered = demean(from, from_mean);
+    Mat to_centered = demean(to, to_mean);
+
+    Mat cov = to_centered.t() * from_centered * one_over_n;
+
+    Mat u,d,vt;
+    SVD::compute(cov, d, u, vt, SVD::MODIFY_A | SVD::FULL_UV);
+
+    CV_CheckGE(countNonZero(d), 2, "Points cannot be colinear");
+
+    Mat S = Mat::eye(3, 3, CV_64F);
+    // det(d) can only ever be >=0, so we can always use this here (compared to the original formula by Umeyama)
+    if (force_rotation && (determinant(u) * determinant(vt) < 0))
+    {
+        S.at<double>(2, 2) = -1;
+    }
+    Mat rmat = u*S*vt;
+
+    double scale = 1.0;
+    if (_scale)
+    {
+        double var_from = 0.;
+        scale = 0.;
+        for(int i = 0; i < 3; i++)
+        {
+            var_from += norm(from_centered.col(i), NORM_L2SQR);
+            scale += d.at<double>(i, 0) * S.at<double>(i, i);
+        }
+        double inverse_var = count / var_from;
+        scale *= inverse_var;
+        *_scale = scale;
+    }
+    Mat new_to = scale * rmat * from_mean.t();
+
+    Mat transform;
+    transform.create(3, 4, CV_64F);
+    Mat r_part(transform(Rect(0, 0, 3, 3)));
+    rmat.copyTo(r_part);
+    transform.col(3) = to_mean.t() - new_to;
+    return transform;
+}
+
+int estimateTranslation3D(InputArray _from, InputArray _to,
+                          OutputArray _out, OutputArray _inliers,
+                          double ransacThreshold, double confidence)
+{
+    CV_INSTRUMENT_REGION();
+
+    Mat from = _from.getMat(), to = _to.getMat();
+    int count = from.checkVector(3);
+
+    CV_Assert( count >= 0 && to.checkVector(3) == count );
+
+    Mat dFrom, dTo;
+    from.convertTo(dFrom, CV_32F);
+    to.convertTo(dTo, CV_32F);
+    dFrom = dFrom.reshape(3, count);
+    dTo = dTo.reshape(3, count);
+
+    const double epsilon = DBL_EPSILON;
+    ransacThreshold = ransacThreshold <= 0 ? 3 : ransacThreshold;
+    confidence = (confidence < epsilon) ? 0.99 : (confidence > 1 - epsilon) ? 0.99 : confidence;
+
+    return createRANSACPointSetRegistrator(makePtr<Translation3DEstimatorCallback>(), 4, ransacThreshold, confidence)->run(dFrom, dTo, _out, _inliers);
+}
+
 Mat estimateAffine2D(InputArray _from, InputArray _to, OutputArray _inliers,
                      const int method, const double ransacReprojThreshold,
                      const size_t maxIters, const double confidence,
                      const size_t refineIters)
 {
+
+    if (method >= USAC_DEFAULT && method <= USAC_MAGSAC)
+        return cv::usac::estimateAffine2D(_from, _to, _inliers, method,
+            ransacReprojThreshold, (int)maxIters, confidence, (int)refineIters);
+
     Mat from = _from.getMat(), to = _to.getMat();
     int count = from.checkVector(2);
     bool result = false;
@@ -885,6 +1202,18 @@ Mat estimateAffine2D(InputArray _from, InputArray _to, OutputArray _inliers,
     }
 
     return H;
+}
+
+Mat estimateAffine2D(InputArray _from, InputArray _to, OutputArray inliers,
+                     const UsacParams &params) {
+    Ptr<usac::Model> model;
+    usac::setParameters(model, usac::EstimationMethod::AFFINE, params, inliers.needed());
+    Ptr<usac::RansacOutput> ransac_output;
+    if (usac::run(model, _from, _to,
+            ransac_output, noArray(), noArray(), noArray(), noArray())) {
+        usac::saveMask(inliers, ransac_output->getInliersMask());
+        return ransac_output->getModel().rowRange(0,2);
+    } else return Mat();
 }
 
 Mat estimateAffinePartial2D(InputArray _from, InputArray _to, OutputArray _inliers,
@@ -972,6 +1301,118 @@ Mat estimateAffinePartial2D(InputArray _from, InputArray _to, OutputArray _inlie
     }
 
     return H;
+}
+
+cv::Vec2d estimateTranslation2D(cv::InputArray _from, cv::InputArray _to,
+                              cv::OutputArray _inliers,
+                              int method,
+                              double ransacReprojThreshold,
+                              size_t maxIters, double confidence,
+                              size_t refineIters)
+{
+    CV_INSTRUMENT_REGION();
+
+    using std::numeric_limits;
+    const double NaN = numeric_limits<double>::quiet_NaN();
+    cv::Vec2d tvec(NaN, NaN);
+
+    // Normalize input layout and type:
+    // - Accepts various shapes (Nx2, 1xN, etc.); force to CV_32FC2 for the registrator.
+    // - Keep local copies to allow reshaping into N x 1 vectors of Point2f.
+    cv::Mat from = _from.getMat(), to = _to.getMat();
+    int count = from.checkVector(2);
+    bool result = false;
+    CV_Assert(count >= 0 && to.checkVector(2) == count);
+
+    if (from.type() != CV_32FC2 || to.type() != CV_32FC2) {
+        cv::Mat tmp1, tmp2;
+        from.convertTo(tmp1, CV_32FC2); from = tmp1;
+        to.convertTo(tmp2, CV_32FC2);   to   = tmp2;
+    } else {
+        from = from.clone();
+        to   = to.clone();
+    }
+
+    // Convert to N x 1 vectors of Point2f (matches registrator expectations).
+    from = from.reshape(2, count);
+    to   = to.reshape(2, count);
+
+    // Optional inlier mask (1-inlier, 0-outlier). Only allocate if requested.
+    cv::Mat inliers;
+    if (_inliers.needed()) {
+        _inliers.create(count, 1, CV_8U, -1, true);
+        inliers = _inliers.getMat();
+    }
+
+    // Build translation model callback. Minimal sample size is 1.
+    cv::Mat T; // 2x3 output (CV_64F)
+    cv::Ptr<cv::PointSetRegistrator::Callback> cb = cv::makePtr<Translation2DEstimatorCallback>();
+
+    // Create robust estimators with the same semantics as affine functions.
+    if (method == RANSAC)
+        result = createRANSACPointSetRegistrator(cb, 1,
+                     ransacReprojThreshold, confidence, (int)maxIters)->run(from, to, T, inliers);
+    else if (method == LMEDS)
+        result = createLMeDSPointSetRegistrator(cb, 1,
+                     confidence, (int)maxIters)->run(from, to, T, inliers);
+    else
+        CV_Error(Error::StsBadArg, "Unknown or unsupported robust estimation method");
+
+    // Estimation failure: return NaNs and zero inlier mask (if requested).
+    if (!result) {
+        if (_inliers.needed())
+            inliers.setTo(cv::Scalar(0));
+        return tvec;
+    }
+
+    // Post-process: compress inliers to the front (same pattern as affine),
+    // then optionally refine or compute closed-form LS (mean displacement) on inliers.
+    if (count > 0) {
+        // Reorder: pack inliers to the front
+        compressElems(from.ptr<cv::Point2f>(), inliers.ptr<uchar>(), 1, count);
+        int nin = compressElems(to.ptr<cv::Point2f>(), inliers.ptr<uchar>(), 1, count);
+
+        if (nin > 0) {
+            cv::Mat src = from.rowRange(0, nin);
+            cv::Mat dst = to.rowRange(0, nin);
+
+            if (refineIters > 0) {
+                if (T.empty())
+                    T = (cv::Mat_<double>(2,3) << 1,0,0, 0,1,0);
+                // LM refine on translation only:
+                // T is 2x3; represent as 6x1 vector [a b c d e f]^T.
+                // We only update the translation entries (c, f).
+                cv::Mat Hvec = T.reshape(1, 6);
+                cv::Ptr<cv::LMSolver> solver = cv::LMSolver::create(
+                    cv::makePtr<Translation2DRefineCallback>(src, dst),
+                    (int)refineIters
+                );
+                solver->run(Hvec);
+            } else {
+                // Closed-form LS on inliers: mean displacement (optimal in L2 sense).
+                const auto* f = src.ptr<cv::Point2f>();
+                const auto* t = dst.ptr<cv::Point2f>();
+                double sx = 0.0, sy = 0.0;
+                for (int i = 0; i < nin; ++i) {
+                    sx += (double)t[i].x - (double)f[i].x;
+                    sy += (double)t[i].y - (double)f[i].y;
+                }
+                if (T.empty())
+                    T = (cv::Mat_<double>(2,3) << 1,0,0, 0,1,0);
+                double* H = T.ptr<double>();
+                H[2] = sx / nin;  // t_x
+                H[5] = sy / nin;  // t_y
+            }
+        }
+
+        // Extract translation components
+        if (!T.empty()) {
+            tvec[0] = T.at<double>(0, 2);
+            tvec[1] = T.at<double>(1, 2);
+        }
+    }
+
+    return tvec;
 }
 
 } // namespace cv

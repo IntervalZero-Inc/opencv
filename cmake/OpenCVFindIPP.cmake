@@ -40,11 +40,8 @@ if (X86 AND UNIX AND NOT APPLE AND NOT ANDROID AND BUILD_SHARED_LIBS)
 endif()
 
 set(IPP_X64 0)
-if(CMAKE_CXX_SIZEOF_DATA_PTR EQUAL 8)
-    set(IPP_X64 1)
-endif()
-if(CMAKE_CL_64)
-    set(IPP_X64 1)
+if(X86_64)
+  set(IPP_X64 1)
 endif()
 
 # This function detects Intel IPP version by analyzing .h file
@@ -87,12 +84,17 @@ endmacro()
 # This macro uses IPP_ROOT_DIR variable
 # TODO Cleanup code after ICV package stabilization
 macro(ipp_detect_version)
-  set(IPP_INCLUDE_DIRS ${IPP_ROOT_DIR}/include)
+  get_filename_component(IPP_INCLUDE_DIRS ${IPP_VERSION_FILE} PATH)
 
   set(__msg)
+  set(IPP_NEW_LAYOUT 0)
   if(EXISTS ${IPP_ROOT_DIR}/include/ippicv_redefs.h)
     set(__msg " (ICV version)")
     set(HAVE_IPP_ICV 1)
+  elseif(EXISTS ${IPP_ROOT_DIR}/include/ipp/ipp.h)
+    set(IPP_NEW_LAYOUT 1)
+    # workaround to enable both layouts
+    add_definitions(-DIPP_PRESERVE_OLD_LAYOUT)
   elseif(EXISTS ${IPP_ROOT_DIR}/include/ipp.h)
     # nothing
   else()
@@ -120,10 +122,18 @@ macro(ipp_detect_version)
 
   if(APPLE AND NOT HAVE_IPP_ICV)
     _ipp_set_library_dir(${IPP_ROOT_DIR}/lib)
-  elseif(IPP_X64)
-    _ipp_set_library_dir(${IPP_ROOT_DIR}/lib/intel64)
+  elseif (IPP_NEW_LAYOUT)
+    if(IPP_X64)
+      _ipp_set_library_dir(${IPP_ROOT_DIR}/lib)
+    else()
+      _ipp_set_library_dir(${IPP_ROOT_DIR}/lib32)
+    endif()
   else()
-    _ipp_set_library_dir(${IPP_ROOT_DIR}/lib/ia32)
+    if(IPP_X64)
+      _ipp_set_library_dir(${IPP_ROOT_DIR}/lib/intel64)
+    else()
+      _ipp_set_library_dir(${IPP_ROOT_DIR}/lib/ia32)
+    endif()
   endif()
 
   macro(_ipp_add_library name)
@@ -146,12 +156,27 @@ macro(ipp_detect_version)
         list(APPEND IPP_LIBRARIES ${IPP_LIBRARY_DIR}/${IPP_LIB_PREFIX}${IPP_PREFIX}${name}${IPP_SUFFIX}${IPP_LIB_SUFFIX})
       else ()
         add_library(ipp${name} STATIC IMPORTED)
+        set(_filename "${IPP_LIB_PREFIX}${IPP_PREFIX}${name}${IPP_SUFFIX}${IPP_LIB_SUFFIX}")
         set_target_properties(ipp${name} PROPERTIES
           IMPORTED_LINK_INTERFACE_LIBRARIES ""
-          IMPORTED_LOCATION ${IPP_LIBRARY_DIR}/${IPP_LIB_PREFIX}${IPP_PREFIX}${name}${IPP_SUFFIX}${IPP_LIB_SUFFIX}
+          IMPORTED_LOCATION ${IPP_LIBRARY_DIR}/${_filename}
         )
+        if("${name}" STREQUAL "core")  # https://github.com/opencv/opencv/pull/19681
+          if(OPENCV_FORCE_IPP_EXCLUDE_LIBS OR OPENCV_FORCE_IPP_EXCLUDE_LIBS_CORE
+              OR (UNIX AND NOT ANDROID AND NOT APPLE
+                  AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|Intel"
+              )
+              AND NOT OPENCV_SKIP_IPP_EXCLUDE_LIBS_CORE
+          )
+            if(CMAKE_VERSION VERSION_LESS "3.13.0")
+              set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--exclude-libs,${_filename} ${CMAKE_SHARED_LINKER_FLAGS}")
+            else()
+              target_link_options(ipp${name} INTERFACE "LINKER:--exclude-libs,${_filename}")
+            endif()
+          endif()
+        endif()
         list(APPEND IPP_LIBRARIES ipp${name})
-        if (NOT BUILD_SHARED_LIBS)
+        if (NOT BUILD_SHARED_LIBS AND (HAVE_IPP_ICV OR ";${OPENCV_INSTALL_EXTERNAL_DEPENDENCIES};" MATCHES ";ipp;"))
           # CMake doesn't support "install(TARGETS ${IPP_PREFIX}${name} " command with imported targets
           install(FILES ${IPP_LIBRARY_DIR}/${IPP_LIB_PREFIX}${IPP_PREFIX}${name}${IPP_SUFFIX}${IPP_LIB_SUFFIX}
                   DESTINATION ${OPENCV_3P_LIB_INSTALL_PATH} COMPONENT dev)
@@ -239,6 +264,10 @@ if(DEFINED ENV{OPENCV_IPP_PATH} AND NOT DEFINED IPPROOT)
 endif()
 
 if(NOT DEFINED IPPROOT)
+  if(APPLE AND NOT IPP_X64)
+    message(STATUS "IPPICV: 32-bit binaries are not supported on Apple platform (MacOSX)")
+    return()
+  endif()
   include("${OpenCV_SOURCE_DIR}/3rdparty/ippicv/ippicv.cmake")
   download_ippicv(ICV_PACKAGE_ROOT)
   if(NOT ICV_PACKAGE_ROOT)
@@ -251,10 +280,13 @@ if(NOT DEFINED IPPROOT)
   else()
     ocv_install_3rdparty_licenses(ippicv "${ICV_PACKAGE_ROOT}/EULA.txt")
   endif()
+  ocv_install_3rdparty_licenses(ippicv "${ICV_PACKAGE_ROOT}/third-party-programs.txt")
 endif()
 
 file(TO_CMAKE_PATH "${IPPROOT}" __IPPROOT)
-if(EXISTS "${__IPPROOT}/include/ippversion.h")
+file(GLOB_RECURSE IPP_VERSION_FILE "${__IPPROOT}/include/*ippversion.h")
+
+if(EXISTS ${IPP_VERSION_FILE})
   set(IPP_ROOT_DIR ${__IPPROOT})
   ipp_detect_version()
 endif()

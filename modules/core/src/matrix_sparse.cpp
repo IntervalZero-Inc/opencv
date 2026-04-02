@@ -2,10 +2,8 @@
 // It is subject to the license terms in the LICENSE file found in the top-level directory
 // of this distribution and at http://opencv.org/license.html
 
-
-#include "opencv2/core/mat.hpp"
-#include "opencv2/core/types_c.h"
 #include "precomp.hpp"
+#include "opencv2/core/mat.hpp"
 
 namespace cv {
 
@@ -38,7 +36,7 @@ typedef void (*ConvertScaleData)(const void* from, void* to, int cn, double alph
 
 static ConvertData getConvertElem(int fromType, int toType)
 {
-    static ConvertData tab[][8] =
+    static ConvertData tab[CV_DEPTH_MAX][CV_DEPTH_MAX] =
     {{ convertData_<uchar, uchar>, convertData_<uchar, schar>,
       convertData_<uchar, ushort>, convertData_<uchar, short>,
       convertData_<uchar, int>, convertData_<uchar, float>,
@@ -83,7 +81,7 @@ static ConvertData getConvertElem(int fromType, int toType)
 
 static ConvertScaleData getConvertScaleElem(int fromType, int toType)
 {
-    static ConvertScaleData tab[][8] =
+    static ConvertScaleData tab[CV_DEPTH_MAX][CV_DEPTH_MAX] =
     {{ convertScaleData_<uchar, uchar>, convertScaleData_<uchar, schar>,
       convertScaleData_<uchar, ushort>, convertScaleData_<uchar, short>,
       convertScaleData_<uchar, int>, convertScaleData_<uchar, float>,
@@ -172,8 +170,103 @@ void SparseMat::Hdr::clear()
     hashtab.clear();
     hashtab.resize(HASH_SIZE0);
     pool.clear();
+#if defined(__GNUC__)  && (__GNUC__ == 13) && !defined(__clang__) && (__cplusplus >= 202002L)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
     pool.resize(nodeSize);
+#if defined(__GNUC__)  && (__GNUC__ == 13) && !defined(__clang__) && (__cplusplus >= 202002L)
+#pragma GCC diagnostic pop
+#endif
     nodeCount = freeList = 0;
+}
+
+///////////////////////////// SparseMat /////////////////////////////
+
+SparseMat::SparseMat()
+    : flags(MAGIC_VAL), hdr(0)
+{}
+
+SparseMat::SparseMat(int _dims, const int* _sizes, int _type)
+    : flags(MAGIC_VAL), hdr(0)
+{
+    create(_dims, _sizes, _type);
+}
+
+SparseMat::SparseMat(const SparseMat& m)
+    : flags(m.flags), hdr(m.hdr)
+{
+    addref();
+}
+
+SparseMat::~SparseMat()
+{
+    release();
+}
+
+SparseMat& SparseMat::operator = (const SparseMat& m)
+{
+    if( this != &m )
+    {
+        if( m.hdr )
+            CV_XADD(&m.hdr->refcount, 1);
+        release();
+        flags = m.flags;
+        hdr = m.hdr;
+    }
+    return *this;
+}
+
+SparseMat& SparseMat::operator=(const Mat& m)
+{
+    return (*this = SparseMat(m));
+}
+
+void SparseMat::assignTo(SparseMat& m, int _type) const
+{
+    if( _type < 0 )
+        m = *this;
+    else
+        convertTo(m, _type);
+}
+
+void SparseMat::addref()
+{
+    if( hdr )
+        CV_XADD(&hdr->refcount, 1);
+}
+
+void SparseMat::release()
+{
+    if( hdr && CV_XADD(&hdr->refcount, -1) == 1 )
+        delete hdr;
+    hdr = 0;
+}
+
+size_t SparseMat::hash(int i0) const
+{
+    return (size_t)i0;
+}
+
+size_t SparseMat::hash(int i0, int i1) const
+{
+    return (size_t)(unsigned)i0 * HASH_SCALE + (unsigned)i1;
+}
+
+size_t SparseMat::hash(int i0, int i1, int i2) const
+{
+    return ((size_t)(unsigned)i0 * HASH_SCALE + (unsigned)i1) * HASH_SCALE + (unsigned)i2;
+}
+
+size_t SparseMat::hash(const int* idx) const
+{
+    size_t h = (unsigned)idx[0];
+    if( !hdr )
+        return 0;
+    int d = hdr->dims;
+    for(int i = 1; i < d; i++ )
+        h = h * HASH_SCALE + (unsigned)idx[i];
+    return h;
 }
 
 
@@ -302,6 +395,7 @@ void SparseMat::convertTo( SparseMat& m, int rtype, double alpha ) const
     if( alpha == 1 )
     {
         ConvertData cvtfunc = getConvertElem(type(), rtype);
+        CV_Assert(cvtfunc);
         for( size_t i = 0; i < N; i++, ++from )
         {
             const Node* n = from.node();
@@ -312,6 +406,7 @@ void SparseMat::convertTo( SparseMat& m, int rtype, double alpha ) const
     else
     {
         ConvertScaleData cvtfunc = getConvertScaleElem(type(), rtype);
+        CV_Assert(cvtfunc);
         for( size_t i = 0; i < N; i++, ++from )
         {
             const Node* n = from.node();
@@ -551,7 +646,7 @@ void SparseMat::resizeHashTab(size_t newsize)
 uchar* SparseMat::newNode(const int* idx, size_t hashval)
 {
     const int HASH_MAX_FILL_FACTOR=3;
-    assert(hdr);
+    CV_Assert(hdr);
     size_t hsize = hdr->hashtab.size();
     if( ++hdr->nodeCount > hsize*HASH_MAX_FILL_FACTOR )
     {
@@ -671,7 +766,7 @@ double norm( const SparseMat& src, int normType )
             }
     }
     else
-        CV_Error( CV_StsUnsupportedFormat, "Only 32f and 64f are supported" );
+        CV_Error( cv::Error::StsUnsupportedFormat, "Only 32f and 64f are supported" );
 
     if( normType == NORM_L2 )
         result = std::sqrt(result);
@@ -734,7 +829,7 @@ void minMaxLoc( const SparseMat& src, double* _minval, double* _maxval, int* _mi
             *_maxval = maxval;
     }
     else
-        CV_Error( CV_StsUnsupportedFormat, "Only 32f and 64f are supported" );
+        CV_Error( cv::Error::StsUnsupportedFormat, "Only 32f and 64f are supported" );
 
     if( _minidx && minidx )
         for( i = 0; i < d; i++ )
@@ -756,7 +851,7 @@ void normalize( const SparseMat& src, SparseMat& dst, double a, int norm_type )
         scale = scale > DBL_EPSILON ? a/scale : 0.;
     }
     else
-        CV_Error( CV_StsBadArg, "Unknown/unsupported norm type" );
+        CV_Error( cv::Error::StsBadArg, "Unknown/unsupported norm type" );
 
     src.convertTo( dst, -1, scale );
 }

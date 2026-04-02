@@ -40,7 +40,6 @@
 //M*/
 
 #include "test_precomp.hpp"
-#include "opencv2/core/core_c.h"
 
 namespace opencv_test { namespace {
 
@@ -176,5 +175,12 @@ TEST(Features2d_Detector_Keypoints_AKAZE, validation)
     CV_FeatureDetectorKeypointsTest test_mldb(AKAZE::create(AKAZE::DESCRIPTOR_MLDB));
     test_mldb.safe_run();
 }
+
+TEST(Features2d_Detector_Keypoints_SIFT, validation)
+{
+    CV_FeatureDetectorKeypointsTest test(SIFT::create());
+    test.safe_run();
+}
+
 
 }} // namespace

@@ -53,7 +53,7 @@ struct SimilarWith
     T value;
     float theta_eps;
     float rho_eps;
-    SimilarWith<T>(T val, float e, float r_e): value(val), theta_eps(e), rho_eps(r_e) { };
+    SimilarWith(T val, float e, float r_e): value(val), theta_eps(e), rho_eps(r_e) { }
     bool operator()(const T& other);
 };
 
@@ -297,6 +297,157 @@ TEST_P(StandartHoughLinesTest, regression_Vec3f)
 TEST_P(HoughLinesPointSetTest, regression)
 {
     run_test();
+}
+
+TEST(HoughLinesPointSet, regression_21029)
+{
+    std::vector<Point2f> points;
+    points.push_back(Point2f(100, 100));
+    points.push_back(Point2f(1000, 1000));
+    points.push_back(Point2f(10000, 10000));
+    points.push_back(Point2f(100000, 100000));
+
+    double rhoMin = 0;
+    double rhoMax = 10;
+    double rhoStep = 0.1;
+
+    double thetaMin = 85 * CV_PI / 180.0;
+    double thetaMax = 95 * CV_PI / 180.0;
+    double thetaStep = 1 * CV_PI / 180.0;
+
+    int lines_max = 5;
+    int threshold = 100;
+
+    Mat lines;
+
+    HoughLinesPointSet(points, lines,
+        lines_max, threshold,
+        rhoMin, rhoMax, rhoStep,
+        thetaMin, thetaMax, thetaStep
+    );
+
+    EXPECT_TRUE(lines.empty());
+}
+
+TEST(HoughLines, regression_21983)
+{
+    Mat img(200, 200, CV_8UC1, Scalar(0));
+    line(img, Point(0, 100), Point(100, 100), Scalar(255));
+    std::vector<Vec2f> lines;
+    HoughLines(img, lines, 1, CV_PI/180, 90, 0, 0, 0.001, 1.58);
+    ASSERT_EQ(lines.size(), 1U);
+    EXPECT_EQ(lines[0][0], 100);
+    EXPECT_NEAR(lines[0][1], 1.57179642, 1e-4);
+}
+
+TEST(HoughLines, regression_25038_vertical)
+{
+    cv::Mat img = cv::Mat::zeros(8, 8, CV_8UC1);
+    img.col(3).setTo(255);
+
+    cv::Mat lines;
+    cv::HoughLines(img, lines, 0.5, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(3, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(0, lines.at<cv::Vec2f>(0)[1], 1e-5);
+
+    cv::HoughLines(img, lines, 0.05, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(3, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(0, lines.at<cv::Vec2f>(0)[1], 1e-5);
+}
+
+TEST(HoughLines, regression_25038_even)
+{
+    cv::Mat img = cv::Mat::zeros(8, 8, CV_8UC1);
+    img.col(4).setTo(255);
+
+    cv::Mat lines;
+    cv::HoughLines(img, lines, 0.5, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(4, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(0, lines.at<cv::Vec2f>(0)[1], 1e-5);
+
+    cv::HoughLines(img, lines, 0.05, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(4, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(0, lines.at<cv::Vec2f>(0)[1], 1e-5);
+}
+
+TEST(HoughLines, regression_25038_horizontal)
+{
+    cv::Mat img = cv::Mat::zeros(8, 8, CV_8UC1);
+    img.row(3).setTo(255);
+
+    cv::Mat lines;
+    cv::HoughLines(img, lines, 0.5, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(3, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(CV_PI/2., lines.at<cv::Vec2f>(0)[1], 1e-5);
+
+    cv::HoughLines(img, lines, 0.05, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(3, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(CV_PI/2., lines.at<cv::Vec2f>(0)[1], 1e-5);
+}
+
+TEST(WeightedHoughLines, horizontal)
+{
+    Mat img(25, 25, CV_8UC1, Scalar(0));
+    // draw lines. from top to bottom, stronger to weaker.
+    line(img, Point(0, 6), Point(25, 6), Scalar(240));
+    line(img, Point(0, 12), Point(25, 12), Scalar(255));
+    line(img, Point(0, 18), Point(25, 18), Scalar(220));
+
+    // detect lines
+    std::vector<Vec2f> lines;
+    int threshold{220*25-1};
+    bool use_edgeval{true};
+    HoughLines(img, lines, 1, CV_PI/180, threshold, 0, 0, 0.0, CV_PI, use_edgeval);
+
+    // check results
+    ASSERT_EQ(3U, lines.size());
+    // detected lines is assumed sorted from stronger to weaker.
+    EXPECT_EQ(12, lines[0][0]);
+    EXPECT_EQ(6, lines[1][0]);
+    EXPECT_EQ(18, lines[2][0]);
+    EXPECT_NEAR(CV_PI/2, lines[0][1], CV_PI/180 + 1e-6);
+    EXPECT_NEAR(CV_PI/2, lines[1][1], CV_PI/180 + 1e-6);
+    EXPECT_NEAR(CV_PI/2, lines[2][1], CV_PI/180 + 1e-6);
+}
+
+TEST(WeightedHoughLines, diagonal)
+{
+    Mat img(25, 25, CV_8UC1, Scalar(0));
+    // draw lines.
+    line(img, Point(0, 0), Point(25, 25), Scalar(128));
+    line(img, Point(0, 25), Point(25, 0), Scalar(255));
+
+    // detect lines
+    std::vector<Vec2f> lines;
+    int threshold{128*25-1};
+    bool use_edgeval{true};
+    HoughLines(img, lines, 1, CV_PI/180, threshold, 0, 0, 0.0, CV_PI, use_edgeval);
+
+    // check results
+    ASSERT_EQ(2U, lines.size());
+    // detected lines is assumed sorted from stronger to weaker.
+    EXPECT_EQ(18, lines[0][0]); // 25*sqrt(2)/2 = 17.67 ~ 18
+    EXPECT_EQ(0, lines[1][0]);
+    EXPECT_NEAR(CV_PI/4, lines[0][1], CV_PI/180 + 1e-6);
+    EXPECT_NEAR(CV_PI*3/4, lines[1][1], CV_PI/180 + 1e-6);
 }
 
 INSTANTIATE_TEST_CASE_P( ImgProc, StandartHoughLinesTest, testing::Combine(testing::Values( "shared/pic5.png", "../stitching/a1.png" ),

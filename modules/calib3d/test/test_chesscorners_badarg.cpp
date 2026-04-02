@@ -41,7 +41,6 @@
 
 #include "test_precomp.hpp"
 #include "test_chessboardgenerator.hpp"
-#include "opencv2/calib3d/calib3d_c.h"
 
 namespace opencv_test { namespace {
 
@@ -89,12 +88,13 @@ void CV_ChessboardDetectorBadArgTest::run( int /*start_from */)
 
     /* /*//*/ */
     int errors = 0;
-    flags = CV_CALIB_CB_ADAPTIVE_THRESH | CV_CALIB_CB_NORMALIZE_IMAGE;
+    flags = CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE;
 
     img = cb.clone();
     initArgs();
     pattern_size = Size(2,2);
-    errors += run_test_case( Error::StsOutOfRange, "Invlid pattern size" );
+    errors += run_test_case( Error::StsOutOfRange, "Invalid pattern size" );
+
     pattern_size = cbg.cornersSize();
 
     cb.convertTo(img, CV_32F);

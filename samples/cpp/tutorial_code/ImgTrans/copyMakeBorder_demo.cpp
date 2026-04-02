@@ -25,15 +25,15 @@ RNG rng(12345);
 int main( int argc, char** argv )
 {
     //![load]
-    const char* imageName = argc >=2 ? argv[1] : "../data/lena.jpg";
+    const char* imageName = argc >=2 ? argv[1] : "lena.jpg";
 
     // Loads an image
-    src = imread( imageName, IMREAD_COLOR ); // Load an image
+    src = imread( samples::findFile( imageName ), IMREAD_COLOR ); // Load an image
 
     // Check if image is loaded fine
     if( src.empty()) {
         printf(" Error opening image\n");
-        printf(" Program Arguments: [image_name -- default ../data/lena.jpg] \n");
+        printf(" Program Arguments: [image_name -- default lena.jpg] \n");
         return -1;
     }
     //![load]
@@ -45,9 +45,9 @@ int main( int argc, char** argv )
     printf( " ** Press 'r' to set the border to be replicated \n");
     printf( " ** Press 'ESC' to exit the program \n");
 
-    //![create_window]
+//![create_window]
     namedWindow( window_name, WINDOW_AUTOSIZE );
-    //![create_window]
+//![create_window]
 
     //![init_arguments]
     // Initialize arguments for the filter

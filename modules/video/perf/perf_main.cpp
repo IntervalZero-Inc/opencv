@@ -4,4 +4,11 @@
     #include <hpx/hpx_main.hpp>
 #endif
 
-CV_PERF_TEST_MAIN(video)
+static
+void initTests()
+{
+    cvtest::addDataSearchEnv("OPENCV_DNN_TEST_DATA_PATH");
+    cvtest::addDataSearchSubDirectory("");  // override "cv" prefix below to access without "../dnn" hacks
+}
+
+CV_PERF_TEST_MAIN(video, initTests())

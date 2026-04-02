@@ -239,7 +239,6 @@ FarnebackUpdateMatrices( const Mat& _R0, const Mat& _R1, const Mat& _flow, Mat& 
 
 #if 1
             int x1 = cvFloor(fx), y1 = cvFloor(fy);
-            const float* ptr = R1 + y1*step1 + x1*5;
             float r2, r3, r4, r5, r6;
 
             fx -= x1; fy -= y1;
@@ -247,6 +246,7 @@ FarnebackUpdateMatrices( const Mat& _R0, const Mat& _R1, const Mat& _flow, Mat& 
             if( (unsigned)x1 < (unsigned)(width-1) &&
                 (unsigned)y1 < (unsigned)(height-1) )
             {
+                const float* ptr = R1 + y1*step1 + x1*5;
                 float a00 = (1.f-fx)*(1.f-fy), a01 = fx*(1.f-fy),
                       a10 = (1.f-fx)*fy, a11 = fx*fy;
 
@@ -262,12 +262,12 @@ FarnebackUpdateMatrices( const Mat& _R0, const Mat& _R1, const Mat& _flow, Mat& 
             }
 #else
             int x1 = cvRound(fx), y1 = cvRound(fy);
-            const float* ptr = R1 + y1*step1 + x1*5;
             float r2, r3, r4, r5, r6;
 
             if( (unsigned)x1 < (unsigned)width &&
                 (unsigned)y1 < (unsigned)height )
             {
+                const float* ptr = R1 + y1*step1 + x1*5;
                 r2 = ptr[0];
                 r3 = ptr[1];
                 r4 = (R0[x*5+2] + ptr[2])*0.5f;
@@ -463,22 +463,22 @@ FarnebackUpdateFlow_GaussianBlur( const Mat& _R0, const Mat& _R1,
                 const float *sptr0 = srow[m], *sptr1;
                 v_float32x4 g4 = v_load(simd_kernel);
                 v_float32x4 s0, s1, s2, s3;
-                s0 = v_load(sptr0 + x) * g4;
-                s1 = v_load(sptr0 + x + 4) * g4;
-                s2 = v_load(sptr0 + x + 8) * g4;
-                s3 = v_load(sptr0 + x + 12) * g4;
+                s0 = v_mul(v_load(sptr0 + x), g4);
+                s1 = v_mul(v_load(sptr0 + x + 4), g4);
+                s2 = v_mul(v_load(sptr0 + x + 8), g4);
+                s3 = v_mul(v_load(sptr0 + x + 12), g4);
 
                 for( i = 1; i <= m; i++ )
                 {
                     v_float32x4 x0, x1;
                     sptr0 = srow[m+i], sptr1 = srow[m-i];
                     g4 = v_load(simd_kernel + i*4);
-                    x0 = v_load(sptr0 + x) + v_load(sptr1 + x);
-                    x1 = v_load(sptr0 + x + 4) + v_load(sptr1 + x + 4);
+                    x0 = v_add(v_load(sptr0 + x), v_load(sptr1 + x));
+                    x1 = v_add(v_load(sptr0 + x + 4), v_load(sptr1 + x + 4));
                     s0 = v_muladd(x0, g4, s0);
                     s1 = v_muladd(x1, g4, s1);
-                    x0 = v_load(sptr0 + x + 8) + v_load(sptr1 + x + 8);
-                    x1 = v_load(sptr0 + x + 12) + v_load(sptr1 + x + 12);
+                    x0 = v_add(v_load(sptr0 + x + 8), v_load(sptr1 + x + 8));
+                    x1 = v_add(v_load(sptr0 + x + 12), v_load(sptr1 + x + 12));
                     s2 = v_muladd(x0, g4, s2);
                     s3 = v_muladd(x1, g4, s3);
                 }
@@ -493,13 +493,13 @@ FarnebackUpdateFlow_GaussianBlur( const Mat& _R0, const Mat& _R1,
             {
                 const float *sptr0 = srow[m], *sptr1;
                 v_float32x4 g4 = v_load(simd_kernel);
-                v_float32x4 s0 = v_load(sptr0 + x) * g4;
+                v_float32x4 s0 = v_mul(v_load(sptr0 + x), g4);
 
                 for( i = 1; i <= m; i++ )
                 {
                     sptr0 = srow[m+i], sptr1 = srow[m-i];
                     g4 = v_load(simd_kernel + i*4);
-                    v_float32x4 x0 = v_load(sptr0 + x) + v_load(sptr1 + x);
+                    v_float32x4 x0 = v_add(v_load(sptr0 + x), v_load(sptr1 + x));
                     s0 = v_muladd(x0, g4, s0);
                 }
                 v_store(vsum + x, s0);
@@ -528,14 +528,14 @@ FarnebackUpdateFlow_GaussianBlur( const Mat& _R0, const Mat& _R1,
             for( ; x <= width*5 - 8; x += 8 )
             {
                 v_float32x4 g4 = v_load(simd_kernel);
-                v_float32x4 s0 = v_load(vsum + x) * g4;
-                v_float32x4 s1 = v_load(vsum + x + 4) * g4;
+                v_float32x4 s0 = v_mul(v_load(vsum + x), g4);
+                v_float32x4 s1 = v_mul(v_load(vsum + x + 4), g4);
 
                 for( i = 1; i <= m; i++ )
                 {
                     g4 = v_load(simd_kernel + i*4);
-                    v_float32x4 x0 = v_load(vsum + x - i*5) + v_load(vsum + x+ i*5);
-                    v_float32x4 x1 = v_load(vsum + x - i*5 + 4) + v_load(vsum + x+ i*5 + 4);
+                    v_float32x4 x0 = v_add(v_load(vsum + x - i * 5), v_load(vsum + x + i * 5));
+                    v_float32x4 x1 = v_add(v_load(vsum + x - i * 5 + 4), v_load(vsum + x + i * 5 + 4));
                     s0 = v_muladd(x0, g4, s0);
                     s1 = v_muladd(x1, g4, s1);
                 }
@@ -617,6 +617,8 @@ public:
     virtual void setFlags(int flags) CV_OVERRIDE { flags_ = flags; }
 
     virtual void calc(InputArray I0, InputArray I1, InputOutputArray flow) CV_OVERRIDE;
+
+    virtual String getDefaultName() const CV_OVERRIDE { return "DenseOpticalFlow.FarnebackOpticalFlow"; }
 
 private:
     int numLevels_;

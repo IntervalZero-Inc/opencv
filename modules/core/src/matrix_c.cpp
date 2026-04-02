@@ -1,7 +1,12 @@
+// This file is part of OpenCV project.
+// It is subject to the license terms in the LICENSE file found in the top-level directory
+// of this distribution and at http://opencv.org/license.html
+
+#include "precomp.hpp"
 #include "opencv2/core/mat.hpp"
 #include "opencv2/core/types_c.h"
-#include "precomp.hpp"
 
+#ifndef OPENCV_EXCLUDE_C_API
 // glue
 
 CvMatND cvMatND(const cv::Mat& m)
@@ -158,7 +163,7 @@ Mat cvarrToMat(const CvArr* arr, bool copyData,
     {
         const IplImage* iplimg = (const IplImage*)arr;
         if( coiMode == 0 && iplimg->roi && iplimg->roi->coi > 0 )
-            CV_Error(CV_BadCOI, "COI is not supported by the function");
+            CV_Error(cv::Error::BadCOI, "COI is not supported by the function");
         return iplImageToMat(iplimg, copyData);
     }
     if( CV_IS_SEQ(arr) )
@@ -182,7 +187,7 @@ Mat cvarrToMat(const CvArr* arr, bool copyData,
         cvCvtSeqToArray(seq, buf.ptr(), CV_WHOLE_SEQ);
         return buf;
     }
-    CV_Error(CV_StsBadArg, "Unknown array type");
+    CV_Error(cv::Error::StsBadArg, "Unknown array type");
 }
 
 void extractImageCOI(const CvArr* arr, OutputArray _ch, int coi)
@@ -264,14 +269,14 @@ cvReduce( const CvArr* srcarr, CvArr* dstarr, int dim, int op )
         dim = src.rows > dst.rows ? 0 : src.cols > dst.cols ? 1 : dst.cols == 1;
 
     if( dim > 1 )
-        CV_Error( CV_StsOutOfRange, "The reduced dimensionality index is out of range" );
+        CV_Error( cv::Error::StsOutOfRange, "The reduced dimensionality index is out of range" );
 
     if( (dim == 0 && (dst.cols != src.cols || dst.rows != 1)) ||
         (dim == 1 && (dst.rows != src.rows || dst.cols != 1)) )
-        CV_Error( CV_StsBadSize, "The output array size is incorrect" );
+        CV_Error( cv::Error::StsBadSize, "The output array size is incorrect" );
 
     if( src.channels() != dst.channels() )
-        CV_Error( CV_StsUnmatchedFormats, "Input and output arrays must have the same number of channels" );
+        CV_Error( cv::Error::StsUnmatchedFormats, "Input and output arrays must have the same number of channels" );
 
     cv::reduce(src, dst, dim, op, dst.type());
 }
@@ -328,7 +333,7 @@ cvRange( CvArr* arr, double start, double end )
                 fdata[j] = (float)val;
     }
     else
-        CV_Error( CV_StsUnsupportedFormat, "The function only supports 32sC1 and 32fC1 datatypes" );
+        CV_Error( cv::Error::StsUnsupportedFormat, "The function only supports 32sC1 and 32fC1 datatypes" );
 
     return arr;
 }
@@ -355,7 +360,6 @@ cvSort( const CvArr* _src, CvArr* _dst, CvArr* _idx, int flags )
         CV_Assert( dst0.data == dst.data );
     }
 }
-
 
 CV_IMPL int
 cvKMeans2( const CvArr* _samples, int cluster_count, CvArr* _labels,
@@ -385,3 +389,5 @@ cvKMeans2( const CvArr* _samples, int cluster_count, CvArr* _labels,
         *_compactness = compactness;
     return 1;
 }
+
+#endif  // OPENCV_EXCLUDE_C_API

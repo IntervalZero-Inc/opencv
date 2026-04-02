@@ -29,7 +29,7 @@ PERF_TEST_P(Size_MatType, mean, TYPICAL_MATS)
 
     declare.in(src, WARMUP_RNG).out(s);
 
-    TEST_CYCLE() s = mean(src);
+    TEST_CYCLE() s = cv::mean(src);
 
     SANITY_CHECK(s, 1e-5);
 }
@@ -45,7 +45,7 @@ PERF_TEST_P(Size_MatType, mean_mask, TYPICAL_MATS)
 
     declare.in(src, WARMUP_RNG).in(mask).out(s);
 
-    TEST_CYCLE() s = mean(src, mask);
+    TEST_CYCLE() s = cv::mean(src, mask);
 
     SANITY_CHECK(s, 5e-5);
 }
@@ -99,6 +99,22 @@ PERF_TEST_P(Size_MatType, countNonZero, testing::Combine( testing::Values( TYPIC
     TEST_CYCLE_MULTIRUN(runs) cnt = countNonZero(src);
 
     SANITY_CHECK(cnt);
+}
+
+PERF_TEST_P(Size_MatType, hasNonZero, testing::Combine( testing::Values( TYPICAL_MAT_SIZES ), testing::Values( CV_8UC1, CV_8SC1, CV_16UC1, CV_16SC1, CV_32SC1, CV_32FC1, CV_64FC1 ) ))
+{
+    Size sz = get<0>(GetParam());
+    int matType = get<1>(GetParam());
+
+    Mat src(sz, matType);
+    /*bool hnz = false;*/
+
+    declare.in(src, WARMUP_RNG);
+
+    int runs = (sz.width <= 640) ? 8 : 1;
+    TEST_CYCLE_MULTIRUN(runs) /*hnz =*/ hasNonZero(src);
+
+    SANITY_CHECK_NOTHING();
 }
 
 } // namespace

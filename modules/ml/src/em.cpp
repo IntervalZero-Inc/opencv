@@ -112,6 +112,7 @@ public:
 
     bool train(const Ptr<TrainData>& data, int) CV_OVERRIDE
     {
+        CV_Assert(!data.empty());
         Mat samples = data->getTrainSamples(), labels;
         return trainEM(samples, labels, noArray(), noArray());
     }
@@ -445,7 +446,7 @@ public:
             CV_Assert(!clusterSamples.empty());
 
             calcCovarMatrix(clusterSamples, covs[clusterIndex], means.row(clusterIndex),
-                CV_COVAR_NORMAL + CV_COVAR_ROWS + CV_COVAR_USE_AVG + CV_COVAR_SCALE, CV_64FC1);
+                COVAR_NORMAL | COVAR_ROWS | COVAR_USE_AVG | COVAR_SCALE, CV_64FC1);
             weights.at<double>(clusterIndex) = static_cast<double>(clusterSamples.rows)/static_cast<double>(nsamples);
         }
 
@@ -655,7 +656,7 @@ public:
 
         // Update weights
         // not normalized first
-        reduce(trainProbs, weights, 0, CV_REDUCE_SUM);
+        reduce(trainProbs, weights, 0, REDUCE_SUM);
 
         // Update means
         means.create(nclusters, dim, CV_64FC1);

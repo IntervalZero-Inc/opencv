@@ -124,32 +124,32 @@ elseif(SIZEOF_UNSIGNED_LONG_LONG EQUAL 8)
 endif()
 
 if(SIZEOF_UNSIGNED_INT EQUAL SIZEOF_SIZE_T)
-  set(TIFF_SIZE_T "unsigned int")
+  set(TIFF_SIZE_T "uint32_t")
   set(TIFF_SIZE_FORMAT "%u")
+  set(TIFF_SSIZE_T "int32_t")
+  set(TIFF_SSIZE_FORMAT "%d")
 elseif(SIZEOF_UNSIGNED_LONG EQUAL SIZEOF_SIZE_T)
-  set(TIFF_SIZE_T "unsigned long")
+  set(TIFF_SIZE_T "uint64_t")
   set(TIFF_SIZE_FORMAT "%lu")
+  set(TIFF_SSIZE_T "int64_t")
+  set(TIFF_SSIZE_FORMAT "%ld")
 elseif(SIZEOF_UNSIGNED_LONG_LONG EQUAL SIZEOF_SIZE_T)
-  set(TIFF_SIZE_T "unsigned long")
+  set(TIFF_SIZE_T "uint64_t")
   if(MINGW)
     set(TIFF_SIZE_FORMAT "%I64u")
+    set(TIFF_SSIZE_FORMAT "%I64d")
   else()
     set(TIFF_SIZE_FORMAT "%llu")
+    set(TIFF_SSIZE_FORMAT "%lld")
   endif()
 endif()
 
 if(SIZEOF_SIGNED_INT EQUAL SIZEOF_UNSIGNED_CHAR_P)
-  set(TIFF_SSIZE_T "signed int")
-  set(TIFF_SSIZE_FORMAT "%d")
 elseif(SIZEOF_SIGNED_LONG EQUAL SIZEOF_UNSIGNED_CHAR_P)
-  set(TIFF_SSIZE_T "signed long")
-  set(TIFF_SSIZE_FORMAT "%ld")
 elseif(SIZEOF_SIGNED_LONG_LONG EQUAL SIZEOF_UNSIGNED_CHAR_P)
   set(TIFF_SSIZE_T "signed long long")
   if(MINGW)
-    set(TIFF_SSIZE_FORMAT "%I64d")
   else()
-    set(TIFF_SSIZE_FORMAT "%lld")
   endif()
 endif()
 
@@ -198,24 +198,12 @@ check_function_exists(strtol     HAVE_STRTOUL)
 check_function_exists(strtoull   HAVE_STRTOULL)
 check_function_exists(lfind      HAVE_LFIND)
 
-# May be inlined, so check it compiles:
-check_c_source_compiles("
-#include <stdio.h>
-int main(void) {
-  char buf[10];
-  snprintf(buf, 10, \"Test %d\", 1);
-  return 0;
-}"
-  HAVE_SNPRINTF)
-
-if(NOT HAVE_SNPRINTF)
-  add_definitions(-DNEED_LIBPORT)
-endif()
-
 # CPU bit order
 set(fillorder FILLORDER_MSB2LSB)
 if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "i.*86.*" OR
    CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64.*" OR
+   # AMD64 on Windows
+   CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "AMD64" OR
    CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "x86_64.*")
   set(fillorder FILLORDER_LSB2MSB)
 endif()
@@ -236,6 +224,9 @@ if(HOST_BIG_ENDIAN)
   set(HOST_BIG_ENDIAN 1)
 else()
   set(HOST_BIG_ENDIAN 0)
+endif()
+if(HOST_BIG_ENDIAN)
+  add_definitions(-DWORDS_BIGENDIAN)
 endif()
 
 # IEEE floating point
@@ -366,13 +357,22 @@ if(LIBLZMA_LIBRARIES)
   list(APPEND TIFF_LIBRARY_DEPS ${LIBLZMA_LIBRARIES})
 endif()
 
+set(LIBTIFF_MAJOR_VERSION "4")
+set(LIBTIFF_MINOR_VERSION "7")
+set(LIBTIFF_MICRO_VERSION "1")
+set(LIBTIFF_VERSION "${LIBTIFF_MAJOR_VERSION}.${LIBTIFF_MINOR_VERSION}.${LIBTIFF_MICRO_VERSION}")
+file(READ "RELEASE-DATE" LIBTIFF_RELEASE_DATE content)
 
+set(TIFF_MAX_DIR_COUNT "1048576")
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/tif_config.h.cmake.in"
                "${CMAKE_CURRENT_BINARY_DIR}/tif_config.h"
                @ONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/tiffconf.h.cmake.in"
                "${CMAKE_CURRENT_BINARY_DIR}/tiffconf.h"
+               @ONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/tiffvers.h.cmake.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/tiffvers.h"
                @ONLY)
 
 ocv_include_directories("${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}" ${ZLIB_INCLUDE_DIRS})
@@ -394,6 +394,7 @@ set(lib_srcs
     tif_fax3sm.c
     tif_flush.c
     tif_getimage.c
+    tif_hash_set.c
     tif_jbig.c
     tif_jpeg_12.c
     tif_jpeg.c
@@ -422,20 +423,17 @@ set(lib_srcs
     t4.h
     tif_dir.h
     tif_fax3.h
+    tif_hash_set.h
+    tif_predict.h
     tiff.h
     tiffio.h
     tiffiop.h
-    tiffvers.h
-    tif_predict.h
+    "${CMAKE_CURRENT_BINARY_DIR}/tiffvers.h"
     uvcode.h
     tiffio.hxx
     "${CMAKE_CURRENT_BINARY_DIR}/tif_config.h"
     "${CMAKE_CURRENT_BINARY_DIR}/tiffconf.h"
     )
-
-if(WIN32 AND NOT HAVE_SNPRINTF)
-  list(APPEND lib_srcs snprintf.c libport.h)
-endif()
 
 if(WIN32 AND NOT WINRT)
   list(APPEND lib_srcs tif_win32.c)
@@ -447,8 +445,10 @@ ocv_warnings_disable(CMAKE_C_FLAGS -Wno-unused-but-set-variable -Wmissing-protot
                                    -Wcast-align -Wshadow -Wno-maybe-uninitialized -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast
                                    -Wmisleading-indentation
                                    -Wimplicit-fallthrough
+                                   -Wunused-parameter  # clang
+                                   -Warray-parameter
+                                   -Wstrict-prototypes  # clang15
 )
-ocv_warnings_disable(CMAKE_C_FLAGS -Wunused-parameter) # clang
 ocv_warnings_disable(CMAKE_CXX_FLAGS -Wmissing-declarations -Wunused-parameter -Wmissing-prototypes
     -Wundef  # tiffiop.h: #if __clang_major__ >= 4
 )
@@ -460,7 +460,7 @@ ocv_warnings_disable(CMAKE_CXX_FLAGS /wd4456 /wd4457 /wd4312) # vs2015
 
 ocv_warnings_disable(CMAKE_C_FLAGS /wd4267 /wd4244 /wd4018 /wd4311 /wd4312)
 
-add_library(${TIFF_LIBRARY} STATIC ${lib_srcs})
+add_library(${TIFF_LIBRARY} STATIC ${OPENCV_3RDPARTY_EXCLUDE_FROM_ALL} ${lib_srcs})
 target_link_libraries(${TIFF_LIBRARY} ${ZLIB_LIBRARIES})
 
 set_target_properties(${TIFF_LIBRARY}
@@ -477,7 +477,7 @@ if(ENABLE_SOLUTION_FOLDERS)
 endif()
 
 if(NOT BUILD_SHARED_LIBS)
-  ocv_install_target(${TIFF_LIBRARY} EXPORT OpenCVModules ARCHIVE DESTINATION ${OPENCV_3P_LIB_INSTALL_PATH} COMPONENT dev)
+  ocv_install_target(${TIFF_LIBRARY} EXPORT OpenCVModules ARCHIVE DESTINATION ${OPENCV_3P_LIB_INSTALL_PATH} COMPONENT dev OPTIONAL)
 endif()
 
-ocv_install_3rdparty_licenses(libtiff COPYRIGHT)
+ocv_install_3rdparty_licenses(libtiff LICENSE.md)

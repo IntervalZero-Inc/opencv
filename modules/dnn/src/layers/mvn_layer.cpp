@@ -43,11 +43,21 @@
 #include "../precomp.hpp"
 #include "layers_common.hpp"
 #include "../op_inf_engine.hpp"
+#include "../ie_ngraph.hpp"
+#include "../op_cuda.hpp"
+
+#include "./cpu_kernels/fast_norm.hpp"
+
 #include <opencv2/dnn/shape_utils.hpp>
 
 #ifdef HAVE_OPENCL
 #include "../ocl4dnn/include/math_functions.hpp"
 #include "opencl_kernels_dnn.hpp"
+#endif
+
+#ifdef HAVE_CUDA
+#include "../cuda4dnn/primitives/mvn.hpp"
+using namespace cv::dnn::cuda4dnn;
 #endif
 
 namespace cv
@@ -61,9 +71,12 @@ public:
     MVNLayerImpl(const LayerParams& params)
     {
         setParamsFrom(params);
+
+        // Caffe params
         normVariance = params.get<bool>("normalize_variance", true);
         acrossChannels = params.get<bool>("across_channels", false);
         eps = params.get<double>("eps", 1e-9);
+
         fuse_batch_norm = false;
         fuse_relu = false;
         relu_slope = 0.f;
@@ -117,11 +130,12 @@ public:
     virtual bool supportBackend(int backendId) CV_OVERRIDE
     {
 #ifdef HAVE_INF_ENGINE
-        if (backendId == DNN_BACKEND_INFERENCE_ENGINE)
-            return !zeroDev && (preferableTarget != DNN_TARGET_MYRIAD || eps <= 1e-7f);
-        else
-#endif  // HAVE_INF_ENGINE
-            return backendId == DNN_BACKEND_OPENCV;
+        if (backendId == DNN_BACKEND_INFERENCE_ENGINE_NGRAPH)
+            return true;
+#endif
+        {
+            return backendId == DNN_BACKEND_OPENCV || backendId == DNN_BACKEND_CUDA;
+        }
     }
 
 #ifdef HAVE_OPENCL
@@ -135,7 +149,7 @@ public:
         UMat& bnorm_bias = umat_shift;
 
         const unsigned LOCAL_SIZE = 128;
-        bool use_half = (inputs[0].depth() == CV_16S);
+        bool use_half = (inputs[0].depth() == CV_16F);
         String opts = format(" -DT=%s -DT4=%s -Dconvert_T=%s -DLOCAL_SIZE=%u", use_half ? "half" : "float",
                              use_half ? "half4" : "float4", use_half ? "convert_half4" : "convert_float4",
                              LOCAL_SIZE
@@ -150,14 +164,16 @@ public:
             CV_Assert(newRows != 0);
 
             MatShape s = shape(newRows, inpMat.total() / newRows);
-            UMat meanMat = UMat(s[0], 1, (use_half) ? CV_16S : CV_32F);
+            UMat meanMat = UMat(s[0], 1, (use_half) ? CV_16F : CV_32F);
             UMat tmpMat  = UMat(s[0], s[1], CV_32F);
             float alpha = 1.0f / s[1];
 
             String buildopt = "-DNUM=4" + opts;
             ocl::Kernel k("mean_fuse4", ocl::dnn::mvn_oclsrc, buildopt + " -DKERNEL_MEAN_FUSE");
             size_t localsize[] = { LOCAL_SIZE };
-            size_t globalsize[] = { (size_t)s[0] / 4 * localsize[0] };
+            size_t groups = std::max<size_t>(1, s[0] / 4);
+            size_t globalsize[] = { groups * localsize[0] };
+
 
             int argId = 0;
             k.set(argId++, ocl::KernelArg::PtrReadOnly(inpMat));
@@ -184,7 +200,7 @@ public:
             k1.set(argId++, ocl::KernelArg::PtrReadOnly(bnorm_weight));
             k1.set(argId++, ocl::KernelArg::PtrReadOnly(bnorm_bias));
             k1.set(argId++, ocl::KernelArg::PtrWriteOnly(outMat));
-            ret = k1.run(1, globalsize, localsize, false);
+            ret = k1.run_(1, globalsize, localsize, false);
             if (!ret)
                 return false;
         }
@@ -212,7 +228,7 @@ public:
         if (normVariance && (row_size % 4 == 0) && (plane_size % 4 == 0))
             return fast_forward_ocl(inputs, outputs);
 
-        if (inputs[0].depth() == CV_16S)
+        if (inputs[0].depth() == CV_16F)
             return false;
 
         String opts = format(" -DT=float -DT4=float4 -Dconvert_T=convert_float4");
@@ -295,98 +311,72 @@ public:
         CV_OCL_RUN(IS_DNN_OPENCL_TARGET(preferableTarget),
                    forward_ocl(inputs_arr, outputs_arr, internals_arr))
 
-        if (inputs_arr.depth() == CV_16S)
+        if (inputs_arr.depth() == CV_16F)
         {
             forward_fallback(inputs_arr, outputs_arr, internals_arr);
             return;
         }
 
-        std::vector<Mat> inputs, outputs, internals;
-        inputs_arr.getMatVector(inputs);
+        std::vector<Mat> inputs, outputs;
+        inputs_arr.getMatVector(inputs); // assume only one input
         outputs_arr.getMatVector(outputs);
-        internals_arr.getMatVector(internals);
 
-        for (size_t inpIdx = 0; inpIdx < inputs.size(); inpIdx++)
-        {
-            Mat &inpBlob = inputs[inpIdx];
-            Mat &outBlob = outputs[inpIdx];
+        const auto &input = inputs[0];
 
-            int splitDim = (acrossChannels) ? 1 : 2;
-            int i, newRows = 1;
-            for( i = 0; i < splitDim; i++ )
-                newRows *= inpBlob.size[i];
-
-            Mat inpMat = inpBlob.reshape(1, newRows);
-            Mat outMat = outBlob.reshape(1, newRows);
-
-            if ( inpBlob.total() == newRows )
-            {
-                // MVN is applied to single values at an every row.
-                if (shift.empty())
-                {
-                    outBlob.setTo(0);
-                }
-                else
-                {
-                    for ( i = 0; i < newRows; i++ )
-                    {
-                        outMat.row(i).setTo(((float*)shift.data)[i]);
-                    }
-                }
-                return;
-            }
-
-            Scalar mean, dev;
-            for ( i = 0; i < newRows; i++)
-            {
-                Mat inpRow = inpMat.row(i);
-                Mat outRow = outMat.row(i);
-                float weight = 1.f;
-                float bias = 0.f;
-                if (fuse_batch_norm)
-                {
-                    weight = i < scale.cols ? ((float*)scale.data)[i] : weight;
-                    bias = i < shift.cols ? ((float*)shift.data)[i] : bias;
-                }
-                cv::meanStdDev(inpRow, mean, (normVariance) ? dev : noArray());
-                double alpha = 1;
-                if (normVariance)
-                {
-                    alpha = 1 / std::sqrt(eps + dev[0]*dev[0]);
-                }
-                double normalizationScale = 1.0;
-                double normalizationShift = 0.0;
-                if (fuse_batch_norm)
-                {
-                    normalizationScale = alpha * weight;
-                    normalizationShift = -mean[0] * normalizationScale + bias;
-                }
-                else
-                {
-                    normalizationScale = alpha;
-                    normalizationShift = -mean[0] * alpha;
-                }
-                inpRow.convertTo(outRow, outRow.type(), normalizationScale, normalizationShift);
-            }
+        if (fuse_batch_norm) { // channel-wise scale/bias of shape (C)
+            CV_CheckTrue(normVariance, "DNN/MVN: not supported");
+            fastNormChannel(input, scale, shift, outputs[0], eps);
+        } else {
+            size_t axis = acrossChannels ? 1 : 2;
+            fastNorm(input, outputs[0], eps, axis, normVariance);
         }
     }
 
-#ifdef HAVE_INF_ENGINE
-    virtual Ptr<BackendNode> initInfEngine(const std::vector<Ptr<BackendWrapper> >&) CV_OVERRIDE
+
+#ifdef HAVE_DNN_NGRAPH
+    virtual Ptr<BackendNode> initNgraph(const std::vector<Ptr<BackendWrapper> >& inputs,
+                                        const std::vector<Ptr<BackendNode> >& nodes) CV_OVERRIDE
     {
-        InferenceEngine::Builder::MVNLayer ieLayer(name);
-        ieLayer.setAcrossChannels(acrossChannels);
-        ieLayer.setNormalize(normVariance);
-        ieLayer.setEpsilon(eps);
-        return Ptr<BackendNode>(new InfEngineBackendNode(ieLayer));
+        auto& ieInpNode = nodes[0].dynamicCast<InfEngineNgraphNode>()->node;
+        int64_t start_axis = acrossChannels ? 1 : 2;
+        std::vector<int64_t> axes_v(ieInpNode.get_shape().size() - start_axis);
+        std::iota(axes_v.begin(), axes_v.end(), start_axis);
+        auto axes = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{axes_v.size()}, axes_v.data());
+        auto mvn = std::make_shared<ov::op::v6::MVN>(ieInpNode, axes, normVariance, eps, ov::op::MVNEpsMode::INSIDE_SQRT);
+        return Ptr<BackendNode>(new InfEngineNgraphNode(mvn));
     }
-#endif  // HAVE_INF_ENGINE
+#endif  // HAVE_DNN_NGRAPH
+
+#ifdef HAVE_CUDA
+    Ptr<BackendNode> initCUDA(
+        void *context_,
+        const std::vector<Ptr<BackendWrapper>>& inputs,
+        const std::vector<Ptr<BackendWrapper>>& outputs
+    ) override
+    {
+        auto context = reinterpret_cast<csl::CSLContext*>(context_);
+
+        cuda4dnn::MVNConfiguration config;
+        config.split_axis = acrossChannels ? 1 : 2;
+        config.normalize_variance = normVariance;
+        config.epsilon = eps;
+        config.input_shapes.resize(inputs.size());
+        for (int i = 0; i < inputs.size(); i++)
+        {
+            auto wrapper = inputs[i].dynamicCast<CUDABackendWrapper>();
+            auto shape = wrapper->getShape();
+            config.input_shapes[i].assign(std::begin(shape), std::end(shape));
+        }
+
+        return make_cuda_node<cuda4dnn::MVNOp>(preferableTarget, std::move(context->stream), config);
+    }
+#endif
 
     virtual int64 getFLOPS(const std::vector<MatShape> &inputs,
                            const std::vector<MatShape> &outputs) const CV_OVERRIDE
     {
         CV_UNUSED(outputs); // suppress unused variable warning
-        long flops = 0;
+        int64 flops = 0;
         for(int i = 0; i < inputs.size(); i++)
         {
             flops += 6*total(inputs[i]) + 3*total(inputs[i], 0, normVariance ? 2 : 1);

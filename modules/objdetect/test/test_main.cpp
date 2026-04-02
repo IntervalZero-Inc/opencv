@@ -7,4 +7,12 @@
     #include <hpx/hpx_main.hpp>
 #endif
 
-CV_TEST_MAIN("cv")
+static
+void initTests()
+{
+#ifdef HAVE_OPENCV_DNN
+    cvtest::addDataSearchEnv("OPENCV_DNN_TEST_DATA_PATH");
+#endif  // HAVE_OPENCV_DNN
+}
+
+CV_TEST_MAIN("cv", initTests())

@@ -110,7 +110,7 @@ public:
     //set parameters
     // N - the number of samples stored in memory per model
     nN = defaultNsamples;
-    //kNN - k nearest neighbour - number on NN for detcting background - default K=[0.1*nN]
+    //kNN - k nearest neighbour - number on NN for detecting background - default K=[0.1*nN]
     nkNN=MAX(1,cvRound(0.1*nN*3+0.40));
 
     //Tb - Threshold Tb*kernelwidth
@@ -131,6 +131,8 @@ public:
     ~BackgroundSubtractorKNNImpl() CV_OVERRIDE {}
     //! the update operator
     void apply(InputArray image, OutputArray fgmask, double learningRate) CV_OVERRIDE;
+
+    void apply(InputArray image, InputArray knownForegroundMask, OutputArray fgmask, double learningRate) CV_OVERRIDE;
 
     //! computes a background image which are the mean of all background gaussians
     virtual void getBackgroundImage(OutputArray backgroundImage) const CV_OVERRIDE;
@@ -214,6 +216,8 @@ public:
         }
     }
 
+    virtual String getDefaultName() const CV_OVERRIDE { return "BackgroundSubtractor_KNN"; }
+
     virtual int getHistory() const CV_OVERRIDE { return history; }
     virtual void setHistory(int _nframes) CV_OVERRIDE { history = _nframes; }
 
@@ -292,7 +296,7 @@ protected:
     //less important parameters - things you might change but be careful
     ////////////////////////
     int nN;//totlal number of samples
-    int nkNN;//number on NN for detcting background - default K=[0.1*nN]
+    int nkNN;//number on NN for detecting background - default K=[0.1*nN]
 
     //shadow detection parameters
     bool bShadowDetection;//default 1 - do shadow detection
@@ -524,7 +528,9 @@ public:
                int _nkNN,
                float _fTau,
                bool _bShadowDetection,
-               uchar _nShadowDetection)
+               uchar _nShadowDetection,
+               const Mat& _knownForegroundMask)
+            :  knownForegroundMask(_knownForegroundMask)
     {
         src = &_src;
         dst = &_dst;
@@ -585,6 +591,17 @@ public:
                         m_nShortCounter,
                         include
                         );
+                // Check that foreground mask exists
+                if (!knownForegroundMask.empty()) {
+                    // If input mask states pixel is foreground
+                    if (knownForegroundMask.at<uchar>(y, x) > 0)
+                    {
+                        mask[x] = 255; // ensure output mask marks this pixel as FG
+                        data += nchannels;
+                        m_aModel += m_nN*3*ndata;
+                        continue;
+                    }
+                }
                 switch (result)
                 {
                     case 0:
@@ -624,6 +641,7 @@ public:
     int m_nkNN;
     bool m_bShadowDetection;
     uchar m_nShadowDetection;
+    const Mat& knownForegroundMask;
 };
 
 #ifdef HAVE_OPENCL
@@ -726,7 +744,12 @@ void BackgroundSubtractorKNNImpl::create_ocl_apply_kernel()
 
 #endif
 
-void BackgroundSubtractorKNNImpl::apply(InputArray _image, OutputArray _fgmask, double learningRate)
+// Base 3 version class
+void BackgroundSubtractorKNNImpl::apply(InputArray _image, OutputArray _fgmask, double learningRate) {
+    apply(_image,  noArray(), _fgmask, learningRate);
+}
+
+void BackgroundSubtractorKNNImpl::apply(InputArray _image, InputArray _knownForegroundMask, OutputArray _fgmask, double learningRate)
 {
     CV_INSTRUMENT_REGION();
 
@@ -754,6 +777,14 @@ void BackgroundSubtractorKNNImpl::apply(InputArray _image, OutputArray _fgmask, 
     Mat image = _image.getMat();
     _fgmask.create( image.size(), CV_8U );
     Mat fgmask = _fgmask.getMat();
+
+    Mat knownForegroundMask = _knownForegroundMask.getMat();
+
+    if(!knownForegroundMask.empty())
+    {
+    CV_Assert(knownForegroundMask.type() == CV_8UC1);
+    CV_Assert(knownForegroundMask.size() == image.size());
+    }
 
     ++nframes;
     learningRate = learningRate >= 0 && nframes > 1 ? learningRate : 1./std::min( 2*nframes, history );
@@ -789,7 +820,8 @@ void BackgroundSubtractorKNNImpl::apply(InputArray _image, OutputArray _fgmask, 
                              nkNN,
                              fTau,
                              bShadowDetection,
-                             nShadowDetection),
+                             nShadowDetection,
+                             knownForegroundMask),
                              image.total()/(double)(1 << 16));
 
     nShortCounter++;//0,1,...,nShortUpdate-1

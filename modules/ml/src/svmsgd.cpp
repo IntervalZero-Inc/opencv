@@ -230,6 +230,7 @@ float SVMSGDImpl::calcShift(InputArray _samples, InputArray _responses) const
 
 bool SVMSGDImpl::train(const Ptr<TrainData>& data, int)
 {
+    CV_Assert(!data.empty());
     clear();
     CV_Assert( isClassifier() );   //toDo: consider
 
@@ -374,7 +375,7 @@ bool SVMSGDImpl::isTrained() const
 void SVMSGDImpl::write(FileStorage& fs) const
 {
     if( !isTrained() )
-        CV_Error( CV_StsParseError, "SVMSGD model data is invalid, it hasn't been trained" );
+        CV_Error( cv::Error::StsParseError, "SVMSGD model data is invalid, it hasn't been trained" );
 
     writeFormat(fs);
     writeParams( fs );
@@ -436,7 +437,7 @@ void SVMSGDImpl::readParams( const FileNode& fn )
                                      svmsgdTypeStr == "ASGD" ? ASGD : -1;
 
     if( svmsgdType < 0 )
-        CV_Error( CV_StsParseError, "Missing or invalid SVMSGD type" );
+        CV_Error( cv::Error::StsParseError, "Missing or invalid SVMSGD type" );
 
     params.svmsgdType = svmsgdType;
 
@@ -446,7 +447,7 @@ void SVMSGDImpl::readParams( const FileNode& fn )
                                              marginTypeStr == "HARD_MARGIN" ? HARD_MARGIN : -1;
 
     if( marginType < 0 )
-        CV_Error( CV_StsParseError, "Missing or invalid margin type" );
+        CV_Error( cv::Error::StsParseError, "Missing or invalid margin type" );
 
     params.marginType = marginType;
 
@@ -516,7 +517,7 @@ void SVMSGDImpl::setOptimalParameters(int svmsgdType, int marginType)
         break;
 
     default:
-        CV_Error( CV_StsParseError, "SVMSGD model data is invalid" );
+        CV_Error( cv::Error::StsParseError, "SVMSGD model data is invalid" );
     }
 }
 }   //ml

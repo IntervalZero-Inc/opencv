@@ -40,7 +40,7 @@ def main():
     cv.imshow('original', img)
 
     modes = cycle(['erode/dilate', 'open/close', 'blackhat/tophat', 'gradient'])
-    str_modes = cycle(['ellipse', 'rect', 'cross'])
+    str_modes = cycle(['ellipse', 'rect', 'cross', 'diamond'])
 
     if PY3:
         cur_mode = next(modes)
@@ -50,8 +50,11 @@ def main():
         cur_str_mode = str_modes.next()
 
     def update(dummy=None):
-        sz = cv.getTrackbarPos('op/size', 'morphology')
-        iters = cv.getTrackbarPos('iters', 'morphology')
+        try: # do not get trackbar position while trackbar is not created
+            sz = cv.getTrackbarPos('op/size', 'morphology')
+            iters = cv.getTrackbarPos('iters', 'morphology')
+        except:
+            return
         opers = cur_mode.split('/')
         if len(opers) > 1:
             sz = sz - 10
