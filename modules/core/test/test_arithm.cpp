@@ -2117,6 +2117,15 @@ TEST(Core_Norm, IPP_regression_NORM_L1_16UC3_small)
     EXPECT_EQ((double)20*cn, cv::norm(a, b, NORM_L1, mask));
 }
 
+TEST(Core_Norm, NORM_L2_8UC4)
+{
+    // Tests there is no integer overflow in norm computation for multiple channels.
+    const int kSide = 100;
+    cv::Mat4b a(kSide, kSide, cv::Scalar(255, 255, 255, 255));
+    cv::Mat4b b = cv::Mat4b::zeros(kSide, kSide);
+    const double kNorm = 2.*kSide*255.;
+    EXPECT_EQ(kNorm, cv::norm(a, b, NORM_L2));
+}
 
 TEST(Core_ConvertTo, regression_12121)
 {
@@ -2375,5 +2384,48 @@ TEST(Core_MinMaxIdx, rows_overflow)
     }
 }
 
+
+TEST(Core_Magnitude, regression_19506)
+{
+    for (int N = 1; N <= 64; ++N)
+    {
+        Mat a(1, N, CV_32FC1, Scalar::all(1e-20));
+        Mat res;
+        magnitude(a, a, res);
+        EXPECT_LE(cvtest::norm(res, NORM_L1), 1e-15) << N;
+    }
+}
+
+TEST(Core_CartPolar, inplace)
+{
+    RNG& rng = TS::ptr()->get_rng();
+    cv::Mat1d A[2] = {cv::Mat1d(10, 10), cv::Mat1d(10, 10)};
+    cv::Mat1d B[2], C[2];
+    cv::UMat uA[2];
+
+    for(int i = 0; i < 2; ++i)
+    {
+        cvtest::randUni(rng, A[i], Scalar::all(-1000), Scalar::all(1000));
+        A[i].copyTo(uA[i]);
+    }
+
+    // Reverse
+    cv::cartToPolar(A[0], A[1], B[0], B[1], false);
+    cv::polarToCart(B[0], B[1], C[0], C[1], false);
+    EXPECT_MAT_NEAR(A[0], C[0], 2);
+    EXPECT_MAT_NEAR(A[1], C[1], 2);
+
+    // Inplace
+    EXPECT_THROW(cv::polarToCart(B[0], B[1], B[0], B[1], false), cv::Exception);
+    EXPECT_THROW(cv::polarToCart(B[0], B[1], B[1], B[0], false), cv::Exception);
+    EXPECT_THROW(cv::cartToPolar(A[0], A[1], A[0], A[1], false), cv::Exception);
+    EXPECT_THROW(cv::cartToPolar(A[0], A[1], A[1], A[0], false), cv::Exception);
+    // Inplace OCL
+    EXPECT_THROW(cv::polarToCart(uA[0], uA[1], uA[0], uA[1]), cv::Exception);
+    EXPECT_THROW(cv::polarToCart(uA[0], uA[1], uA[1], uA[0]), cv::Exception);
+    EXPECT_THROW(cv::cartToPolar(uA[0], uA[1], uA[0], uA[1]), cv::Exception);
+    EXPECT_THROW(cv::cartToPolar(uA[0], uA[1], uA[0], uA[1]), cv::Exception);
+
+}
 
 }} // namespace

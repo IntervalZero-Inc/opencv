@@ -45,7 +45,7 @@ if(INSTALL_PYTHON_EXAMPLES)
   add_subdirectory(python)
 endif()
 
-ocv_install_example_src("." CMakeLists.txt)
+ocv_install_example_src("." CMakeLists.txt samples_utils.cmake)
 if(INSTALL_C_EXAMPLES)
   install(DIRECTORY data DESTINATION "${OPENCV_SAMPLES_SRC_INSTALL_PATH}" COMPONENT samples_data)
 endif()
@@ -56,7 +56,7 @@ else()
 #  Standalone mode
 #
 #===================================================================================================
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12.2)
 
 project(samples C CXX)
 option(BUILD_EXAMPLES "Build samples" ON)
@@ -97,8 +97,10 @@ if(MSVC)
     endforeach(flag_var)
 
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /NODEFAULTLIB:atlthunk.lib /NODEFAULTLIB:msvcrt.lib /NODEFAULTLIB:msvcrtd.lib")
-    set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} /NODEFAULTLIB:libcmt.lib")
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /NODEFAULTLIB:libcmtd.lib")
+    if(NOT BUILD_WITH_STATIC_CRT)
+      set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} /NODEFAULTLIB:libcmt.lib")
+      set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /NODEFAULTLIB:libcmtd.lib")
+    endif()
   endif()
 endif()
 
@@ -112,6 +114,7 @@ else()
   find_package(Threads)
 endif()
 if((TARGET Threads::Threads OR HAVE_THREADS) AND NOT OPENCV_EXAMPLES_DISABLE_THREADS)
+  set(HAVE_THREADS 1)
   add_definitions(-DHAVE_THREADS=1)
 endif()
 

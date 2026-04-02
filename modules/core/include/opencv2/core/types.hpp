@@ -702,24 +702,24 @@ public:
     //! the default constructor
     CV_WRAP KeyPoint();
     /**
-    @param _pt x & y coordinates of the keypoint
-    @param _size keypoint diameter
-    @param _angle keypoint orientation
-    @param _response keypoint detector response on the keypoint (that is, strength of the keypoint)
-    @param _octave pyramid octave in which the keypoint has been detected
-    @param _class_id object id
+    @param pt x & y coordinates of the keypoint
+    @param size keypoint diameter
+    @param angle keypoint orientation
+    @param response keypoint detector response on the keypoint (that is, strength of the keypoint)
+    @param octave pyramid octave in which the keypoint has been detected
+    @param class_id object id
      */
-    KeyPoint(Point2f _pt, float _size, float _angle=-1, float _response=0, int _octave=0, int _class_id=-1);
+    KeyPoint(Point2f pt, float size, float angle=-1, float response=0, int octave=0, int class_id=-1);
     /**
     @param x x-coordinate of the keypoint
     @param y y-coordinate of the keypoint
-    @param _size keypoint diameter
-    @param _angle keypoint orientation
-    @param _response keypoint detector response on the keypoint (that is, strength of the keypoint)
-    @param _octave pyramid octave in which the keypoint has been detected
-    @param _class_id object id
+    @param size keypoint diameter
+    @param angle keypoint orientation
+    @param response keypoint detector response on the keypoint (that is, strength of the keypoint)
+    @param octave pyramid octave in which the keypoint has been detected
+    @param class_id object id
      */
-    CV_WRAP KeyPoint(float x, float y, float _size, float _angle=-1, float _response=0, int _octave=0, int _class_id=-1);
+    CV_WRAP KeyPoint(float x, float y, float size, float angle=-1, float response=0, int octave=0, int class_id=-1);
 
     size_t hash() const;
 
@@ -1192,7 +1192,7 @@ _Tp Point_<_Tp>::dot(const Point_& pt) const
 template<typename _Tp> inline
 double Point_<_Tp>::ddot(const Point_& pt) const
 {
-    return (double)x*pt.x + (double)y*pt.y;
+    return (double)x*(double)(pt.x) + (double)y*(double)(pt.y);
 }
 
 template<typename _Tp> inline
@@ -1895,13 +1895,33 @@ Rect_<_Tp>& operator -= ( Rect_<_Tp>& a, const Size_<_Tp>& b )
 template<typename _Tp> static inline
 Rect_<_Tp>& operator &= ( Rect_<_Tp>& a, const Rect_<_Tp>& b )
 {
-    _Tp x1 = std::max(a.x, b.x);
-    _Tp y1 = std::max(a.y, b.y);
-    a.width = std::min(a.x + a.width, b.x + b.width) - x1;
-    a.height = std::min(a.y + a.height, b.y + b.height) - y1;
-    a.x = x1;
-    a.y = y1;
-    if( a.width <= 0 || a.height <= 0 )
+    if (a.empty() || b.empty()) {
+        a = Rect();
+        return a;
+    }
+    const Rect_<_Tp>& Rx_min = (a.x < b.x) ? a : b;
+    const Rect_<_Tp>& Rx_max = (a.x < b.x) ? b : a;
+    const Rect_<_Tp>& Ry_min = (a.y < b.y) ? a : b;
+    const Rect_<_Tp>& Ry_max = (a.y < b.y) ? b : a;
+    // Looking at the formula below, we will compute Rx_min.width - (Rx_max.x - Rx_min.x)
+    // but we want to avoid overflows. Rx_min.width >= 0 and (Rx_max.x - Rx_min.x) >= 0
+    // by definition so the difference does not overflow. The only thing that can overflow
+    // is (Rx_max.x - Rx_min.x). And it can only overflow if Rx_min.x < 0.
+    // Let us first deal with the following case.
+    if ((Rx_min.x < 0 && Rx_min.x + Rx_min.width < Rx_max.x) ||
+        (Ry_min.y < 0 && Ry_min.y + Ry_min.height < Ry_max.y)) {
+        a = Rect();
+        return a;
+    }
+    // We now know that either Rx_min.x >= 0, or
+    // Rx_min.x < 0 && Rx_min.x + Rx_min.width >= Rx_max.x and therefore
+    // Rx_min.width >= (Rx_max.x - Rx_min.x) which means (Rx_max.x - Rx_min.x)
+    // is inferior to a valid int and therefore does not overflow.
+    a.width = std::min(Rx_min.width - (Rx_max.x - Rx_min.x), Rx_max.width);
+    a.height = std::min(Ry_min.height - (Ry_max.y - Ry_min.y), Ry_max.height);
+    a.x = Rx_max.x;
+    a.y = Ry_max.y;
+    if (a.empty())
         a = Rect();
     return a;
 }

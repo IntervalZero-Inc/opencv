@@ -43,6 +43,18 @@
 #include "../precomp.hpp"
 #include "layers_common.hpp"
 #include "../op_inf_engine.hpp"
+
+#ifdef HAVE_DNN_NGRAPH
+#include "../ie_ngraph.hpp"
+#if INF_ENGINE_VER_MAJOR_GT(INF_ENGINE_RELEASE_2020_4)
+#include <ngraph/op/prior_box.hpp>
+#include <ngraph/op/prior_box_clustered.hpp>
+#else
+#include <ngraph/op/experimental/layers/prior_box.hpp>
+#include <ngraph/op/experimental/layers/prior_box_clustered.hpp>
+#endif
+#endif
+
 #include <float.h>
 #include <algorithm>
 #include <cmath>
@@ -180,21 +192,20 @@ public:
     PriorBoxLayerImpl(const LayerParams &params)
     {
         setParamsFrom(params);
-        _minSize = getParameter<float>(params, "min_size", 0, false, 0);
         _flip = getParameter<bool>(params, "flip", 0, false, true);
         _clip = getParameter<bool>(params, "clip", 0, false, true);
         _bboxesNormalized = getParameter<bool>(params, "normalized_bbox", 0, false, true);
 
-        _aspectRatios.clear();
-
+        getParams("min_size", params, &_minSize);
         getAspectRatios(params);
         getVariance(params);
 
-        _maxSize = -1;
         if (params.has("max_size"))
         {
-            _maxSize = params.get("max_size").get<float>(0);
-            CV_Assert(_maxSize > _minSize);
+            getParams("max_size", params, &_maxSize);
+            CV_Assert(_minSize.size() == _maxSize.size());
+            for (int i = 0; i < _maxSize.size(); i++)
+                CV_Assert(_minSize[i] < _maxSize[i]);
         }
 
         std::vector<float> widths, heights;
@@ -213,25 +224,28 @@ public:
         }
         else
         {
-            CV_Assert(_minSize > 0);
-            _boxWidths.resize(1 + (_maxSize > 0 ? 1 : 0) + _aspectRatios.size());
-            _boxHeights.resize(_boxWidths.size());
-            _boxWidths[0] = _boxHeights[0] = _minSize;
-
-            int i = 1;
-            if (_maxSize > 0)
+            CV_Assert(!_minSize.empty());
+            for (int i = 0; i < _minSize.size(); ++i)
             {
-                // second prior: aspect_ratio = 1, size = sqrt(min_size * max_size)
-                _boxWidths[i] = _boxHeights[i] = sqrt(_minSize * _maxSize);
-                i += 1;
-            }
+                float minSize = _minSize[i];
+                CV_Assert(minSize > 0);
+                _boxWidths.push_back(minSize);
+                _boxHeights.push_back(minSize);
 
-            // rest of priors
-            for (size_t r = 0; r < _aspectRatios.size(); ++r)
-            {
-                float arSqrt = sqrt(_aspectRatios[r]);
-                _boxWidths[i + r] = _minSize * arSqrt;
-                _boxHeights[i + r] = _minSize / arSqrt;
+                if (_maxSize.size() > 0)
+                {
+                    float size = sqrt(minSize * _maxSize[i]);
+                    _boxWidths.push_back(size);
+                    _boxHeights.push_back(size);
+                }
+
+                // rest of priors
+                for (size_t r = 0; r < _aspectRatios.size(); ++r)
+                {
+                    float arSqrt = sqrt(_aspectRatios[r]);
+                    _boxWidths.push_back(minSize * arSqrt);
+                    _boxHeights.push_back(minSize / arSqrt);
+                }
             }
         }
         CV_Assert(_boxWidths.size() == _boxHeights.size());
@@ -270,8 +284,11 @@ public:
 
     virtual bool supportBackend(int backendId) CV_OVERRIDE
     {
-        return backendId == DNN_BACKEND_OPENCV ||
-               (backendId == DNN_BACKEND_INFERENCE_ENGINE && haveInfEngine());
+#ifdef HAVE_DNN_NGRAPH
+        if (backendId == DNN_BACKEND_INFERENCE_ENGINE_NGRAPH)
+            return _explicitSizes || _stepX == _stepY;
+#endif
+        return backendId == DNN_BACKEND_OPENCV;
     }
 
     bool getMemoryShapes(const std::vector<MatShape> &inputs,
@@ -480,68 +497,68 @@ public:
         }
     }
 
-#ifdef HAVE_INF_ENGINE
-    virtual Ptr<BackendNode> initInfEngine(const std::vector<Ptr<BackendWrapper> >&) CV_OVERRIDE
+
+#ifdef HAVE_DNN_NGRAPH
+    virtual Ptr<BackendNode> initNgraph(const std::vector<Ptr<BackendWrapper> >& inputs, const std::vector<Ptr<BackendNode> >& nodes) CV_OVERRIDE
     {
+        CV_Assert(nodes.size() == 2);
+        auto layer = nodes[0].dynamicCast<InfEngineNgraphNode>()->node;
+        auto image = nodes[1].dynamicCast<InfEngineNgraphNode>()->node;
+        auto layer_shape = std::make_shared<ngraph::op::ShapeOf>(layer);
+        auto image_shape = std::make_shared<ngraph::op::ShapeOf>(image);
+
+        auto lower_bounds = std::make_shared<ngraph::op::Constant>(ngraph::element::i64, ngraph::Shape{1}, std::vector<int64_t>{2});
+        auto upper_bounds = std::make_shared<ngraph::op::Constant>(ngraph::element::i64, ngraph::Shape{1}, std::vector<int64_t>{4});
+        auto strides      = std::make_shared<ngraph::op::Constant>(ngraph::element::i64, ngraph::Shape{1}, std::vector<int64_t>{1});
+
+        auto slice_layer = std::make_shared<ngraph::op::v1::StridedSlice>(layer_shape,
+                                            lower_bounds, upper_bounds, strides, std::vector<int64_t>{}, std::vector<int64_t>{});
+        auto slice_image = std::make_shared<ngraph::op::v1::StridedSlice>(image_shape,
+                                            lower_bounds, upper_bounds, strides, std::vector<int64_t>{}, std::vector<int64_t>{});
+
         if (_explicitSizes)
         {
-            InferenceEngine::Builder::PriorBoxClusteredLayer ieLayer(name);
-            ieLayer.setSteps({_stepY, _stepX});
-
-            CV_CheckEQ(_offsetsX.size(), (size_t)1, ""); CV_CheckEQ(_offsetsY.size(), (size_t)1, ""); CV_CheckEQ(_offsetsX[0], _offsetsY[0], "");
-            ieLayer.setOffset(_offsetsX[0]);
-
-            ieLayer.setClip(_clip);
-            ieLayer.setFlip(false);  // We already flipped aspect ratios.
-
-            InferenceEngine::Builder::Layer l = ieLayer;
-
             CV_Assert_N(!_boxWidths.empty(), !_boxHeights.empty(), !_variance.empty());
             CV_Assert(_boxWidths.size() == _boxHeights.size());
-            l.getParameters()["width"] = _boxWidths;
-            l.getParameters()["height"] = _boxHeights;
-            l.getParameters()["variance"] = _variance;
-            return Ptr<BackendNode>(new InfEngineBackendNode(l));
+            ngraph::op::PriorBoxClusteredAttrs attrs;
+            attrs.widths = _boxWidths;
+            attrs.heights = _boxHeights;
+            attrs.clip = _clip;
+            CV_CheckEQ(_offsetsX.size(), (size_t)1, ""); CV_CheckEQ(_offsetsY.size(), (size_t)1, ""); CV_CheckEQ(_offsetsX[0], _offsetsY[0], "");
+            attrs.offset = _offsetsX[0];
+            attrs.step_heights = _stepY;
+            attrs.step_widths = _stepX;
+            attrs.variances = _variance;
+
+            auto priorBox = std::make_shared<ngraph::op::PriorBoxClustered>(slice_layer, slice_image, attrs);
+            auto axis = std::make_shared<ngraph::op::Constant>(ngraph::element::i64, ngraph::Shape{1}, std::vector<int64_t>{0});
+            auto unsqueeze = std::make_shared<ngraph::op::v0::Unsqueeze>(priorBox, axis);
+            return Ptr<BackendNode>(new InfEngineNgraphNode(unsqueeze));
         }
         else
         {
-            InferenceEngine::Builder::PriorBoxLayer ieLayer(name);
-
-            CV_Assert(!_explicitSizes);
-
-            ieLayer.setMinSize(_minSize);
-            if (_maxSize > 0)
-                ieLayer.setMaxSize(_maxSize);
-
+            ngraph::op::PriorBoxAttrs attrs;
+            attrs.min_size = _minSize;
+            attrs.max_size = _maxSize;
+            // doesn't work with empty aspectRatio
+            attrs.aspect_ratio = !_aspectRatios.empty()? _aspectRatios : std::vector<float>{1.0f};
+            attrs.clip = _clip;
+            attrs.flip = false;
+            attrs.variance = _variance;
             CV_CheckEQ(_offsetsX.size(), (size_t)1, ""); CV_CheckEQ(_offsetsY.size(), (size_t)1, ""); CV_CheckEQ(_offsetsX[0], _offsetsY[0], "");
-            ieLayer.setOffset(_offsetsX[0]);
+            attrs.offset = _offsetsX[0];
 
-            ieLayer.setClip(_clip);
-            ieLayer.setFlip(false);  // We already flipped aspect ratios.
+            attrs.step = _stepX;
+            attrs.scale_all_sizes = !_aspectRatios.empty();
 
-            InferenceEngine::Builder::Layer l = ieLayer;
-            if (_stepX == _stepY)
-            {
-                l.getParameters()["step"] = _stepX;
-                l.getParameters()["step_h"] = 0.0f;
-                l.getParameters()["step_w"] = 0.0f;
-            }
-            else
-            {
-                l.getParameters()["step"] = 0.0f;
-                l.getParameters()["step_h"] = _stepY;
-                l.getParameters()["step_w"] = _stepX;
-            }
-            if (!_aspectRatios.empty())
-            {
-                l.getParameters()["aspect_ratio"] = _aspectRatios;
-            }
-            CV_Assert(!_variance.empty());
-            l.getParameters()["variance"] = _variance;
-            return Ptr<BackendNode>(new InfEngineBackendNode(l));
+            auto priorBox = std::make_shared<ngraph::op::PriorBox>(slice_layer, slice_image, attrs);
+            auto axis = std::make_shared<ngraph::op::Constant>(ngraph::element::i64, ngraph::Shape{1}, std::vector<int64_t>{0});
+            auto unsqueeze = std::make_shared<ngraph::op::v0::Unsqueeze>(priorBox, axis);
+            return Ptr<BackendNode>(new InfEngineNgraphNode(unsqueeze));
         }
     }
-#endif  // HAVE_INF_ENGINE
+#endif  // HAVE_DNN_NGRAPH
+
 
     virtual int64 getFLOPS(const std::vector<MatShape> &inputs,
                            const std::vector<MatShape> &outputs) const CV_OVERRIDE
@@ -558,8 +575,8 @@ public:
     }
 
 private:
-    float _minSize;
-    float _maxSize;
+    std::vector<float> _minSize;
+    std::vector<float> _maxSize;
 
     float _stepX, _stepY;
 

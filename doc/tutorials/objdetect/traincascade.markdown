@@ -1,12 +1,17 @@
 Cascade Classifier Training {#tutorial_traincascade}
 ===========================
 
+@prev_tutorial{tutorial_cascade_classifier}
+
+
 Introduction
 ------------
 
 Working with a boosted cascade of weak classifiers includes two major stages: the training and the detection stage. The detection stage using either HAAR or LBP based models, is described in the @ref tutorial_cascade_classifier "object detection tutorial". This documentation gives an overview of the functionality needed to train your own boosted cascade of weak classifiers. The current guide will walk through all the different stages: collecting training data, preparation of the training data and executing the actual model training.
 
 To support this tutorial, several official OpenCV applications will be used: [opencv_createsamples](https://github.com/opencv/opencv/tree/3.4/apps/createsamples), [opencv_annotation](https://github.com/opencv/opencv/tree/3.4/apps/annotation), [opencv_traincascade](https://github.com/opencv/opencv/tree/3.4/apps/traincascade) and [opencv_visualisation](https://github.com/opencv/opencv/tree/3.4/apps/visualisation).
+
+@note Createsamples and traincascade are disabled since OpenCV 4.0. Consider using these apps for training from 3.4 branch for Cascade Classifier. Model format is the same between 3.4 and 4.x.
 
 ### Important notes
 
@@ -168,7 +173,7 @@ Command line arguments of opencv_traincascade application grouped by purposes:
   - `-w <sampleWidth>` :  Width of training samples (in pixels). Must have exactly the same value as used during training samples creation (opencv_createsamples utility).
   - `-h <sampleHeight>` : Height of training samples (in pixels). Must have exactly the same value as used during training samples creation (opencv_createsamples utility).
 
-- Boosted classifer parameters:
+- Boosted classifier parameters:
   - `-bt <{DAB, RAB, LB, GAB(default)}>` : Type of boosted classifiers: DAB - Discrete AdaBoost, RAB - Real AdaBoost, LB - LogitBoost, GAB - Gentle AdaBoost.
   - `-minHitRate <min_hit_rate>` : Minimal desired hit rate for each stage of the classifier. Overall hit rate may be estimated as (min_hit_rate ^ number_of_stages), @cite Viola04 §4.1.
   - `-maxFalseAlarmRate <max_false_alarm_rate>` : Maximal desired false alarm rate for each stage of the classifier. Overall false alarm rate may be estimated as (max_false_alarm_rate ^ number_of_stages), @cite Viola04 §4.1.

@@ -259,15 +259,9 @@ static char* icvJSONParseValue( CvFileStorage* fs, char* ptr, CvFileNode* node )
                         parser.flush();
                     }
 
-                    /* save as CvSeq */
-                    int elem_size = ::icvCalcStructSize(dt.c_str(), 0);
-                    if (total_byte_size % elem_size != 0)
-                        CV_PARSE_ERROR("Byte size not match elememt size");
-                    int elem_cnt = total_byte_size / elem_size;
-
                     /* after icvFSCreateCollection, node->tag == struct_flags */
                     icvFSCreateCollection(fs, CV_NODE_FLOW | CV_NODE_SEQ, node);
-                    base64::make_seq(binary_buffer.data(), elem_cnt, dt.c_str(), *node->data.seq);
+                    base64::make_seq(fs, binary_buffer.data(), total_byte_size, dt.c_str(), *node->data.seq);
                 }
                 else
                 {
@@ -762,7 +756,7 @@ void icvJSONEndWriteStruct( CvFileStorage* fs )
     cvSeqPop( fs->write_stack, &parent_flags );
     fs->struct_indent -= 4;
     fs->struct_flags = parent_flags & ~CV_NODE_EMPTY;
-    assert( fs->struct_indent >= 0 );
+    CV_Assert( fs->struct_indent >= 0 );
 
     if ( CV_NODE_IS_COLLECTION(struct_flags) )
     {

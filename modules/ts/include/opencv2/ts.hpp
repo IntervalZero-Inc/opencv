@@ -122,6 +122,9 @@
 //#pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
+#if defined(__OPENCV_BUILD) && defined(__APPLE__) && defined(__clang__) && ((__clang_major__*100 + __clang_minor__) >= 1301)
+#pragma clang diagnostic ignored "-Wdeprecated-copy"
+#endif
 #include "opencv2/ts/ts_gtest.h"
 #if defined(__OPENCV_BUILD) && defined(__GNUC__) && __GNUC__ >= 5
 //#pragma GCC diagnostic pop
@@ -180,12 +183,21 @@ using testing::tuple_size;
 using testing::tuple_element;
 
 
-class SkipTestException: public cv::Exception
+namespace details {
+class SkipTestExceptionBase: public cv::Exception
+{
+public:
+    SkipTestExceptionBase(bool handlingTags);
+    SkipTestExceptionBase(const cv::String& message, bool handlingTags);
+};
+}
+
+class SkipTestException: public details::SkipTestExceptionBase
 {
 public:
     int dummy; // workaround for MacOSX Xcode 7.3 bug (don't make class "empty")
-    SkipTestException() : dummy(0) {}
-    SkipTestException(const cv::String& message) : dummy(0) { this->msg = message; }
+    SkipTestException() : details::SkipTestExceptionBase(false), dummy(0) {}
+    SkipTestException(const cv::String& message) : details::SkipTestExceptionBase(message, false), dummy(0) { }
 };
 
 /** Apply tag to the current test
@@ -210,6 +222,8 @@ static inline void applyTestTag(const std::string& tag1, const std::string& tag2
 { applyTestTag_(tag1); applyTestTag_(tag2); applyTestTag_(tag3); checkTestTags(); }
 static inline void applyTestTag(const std::string& tag1, const std::string& tag2, const std::string& tag3, const std::string& tag4)
 { applyTestTag_(tag1); applyTestTag_(tag2); applyTestTag_(tag3); applyTestTag_(tag4); checkTestTags(); }
+static inline void applyTestTag(const std::string& tag1, const std::string& tag2, const std::string& tag3, const std::string& tag4, const std::string& tag5)
+{ applyTestTag_(tag1); applyTestTag_(tag2); applyTestTag_(tag3); applyTestTag_(tag4); applyTestTag_(tag5); checkTestTags(); }
 
 
 /** Append global skip test tags
@@ -427,6 +441,9 @@ protected:
 
     // updates progress bar
     virtual int update_progress( int progress, int test_case_idx, int count, double dt );
+
+    // dump test case input parameters
+    virtual void dump_test_case(int test_case_idx, std::ostream* out);
 
     // finds test parameter
     const CvFileNode* find_param( CvFileStorage* fs, const char* param_name );

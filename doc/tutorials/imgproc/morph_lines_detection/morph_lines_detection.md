@@ -30,7 +30,7 @@ Two of the most basic morphological operations are dilation and erosion. Dilatio
 
     ![Dilation on a Grayscale Image](images/morph6.gif)
 
--   __Erosion__: The vise versa applies for the erosion operation. The value of the output pixel is the <b><em>minimum</em></b> value of all the pixels that fall within the structuring element's size and shape. Look the at the example figures below:
+-   __Erosion__: The vice versa applies for the erosion operation. The value of the output pixel is the <b><em>minimum</em></b> value of all the pixels that fall within the structuring element's size and shape. Look the at the example figures below:
 
     ![Erosion on a Binary Image](images/morph211.png)
 
@@ -123,7 +123,7 @@ Get image from [here](https://raw.githubusercontent.com/opencv/opencv/3.4/doc/tu
 
 #### Output images
 
-Now we are ready to apply morphological operations in order to extract the horizontal and vertical lines and as a consequence to separate the the music notes from the music sheet, but first let's initialize the output images that we will use for that reason:
+Now we are ready to apply morphological operations in order to extract the horizontal and vertical lines and as a consequence to separate the music notes from the music sheet, but first let's initialize the output images that we will use for that reason:
 
 @add_toggle_cpp
 @snippet samples/cpp/tutorial_code/ImgProc/morph_lines_detection/Morphology_3.cpp init

@@ -45,7 +45,7 @@ public:
                   << "Write_extrinsicParameters"   << writeExtrinsics
                   << "Write_outputFileName"  << outputFileName
 
-                  << "Show_UndistortedImage" << showUndistorsed
+                  << "Show_UndistortedImage" << showUndistorted
 
                   << "Input_FlipAroundHorizontalAxis" << flipVertical
                   << "Input_Delay" << delay
@@ -67,7 +67,7 @@ public:
         node["Calibrate_FixPrincipalPointAtTheCenter"] >> calibFixPrincipalPoint;
         node["Calibrate_UseFisheyeModel"] >> useFisheye;
         node["Input_FlipAroundHorizontalAxis"] >> flipVertical;
-        node["Show_UndistortedImage"] >> showUndistorsed;
+        node["Show_UndistortedImage"] >> showUndistorted;
         node["Input"] >> input;
         node["Input_Delay"] >> delay;
         node["Fix_K1"] >> fixK1;
@@ -214,7 +214,7 @@ public:
     bool calibFixPrincipalPoint; // Fix the principal point at the center
     bool flipVertical;           // Flip the captured images around the horizontal axis
     string outputFileName;       // The name of the file where to write
-    bool showUndistorsed;        // Show undistorted images after calibration
+    bool showUndistorted;        // Show undistorted images after calibration
     string input;                // The input ->
     bool useFisheye;             // use fisheye camera model for calibration
     bool fixK1;                  // fix K1 distortion coefficient
@@ -374,8 +374,8 @@ int main(int argc, char* argv[])
 
         if( mode == CAPTURING )
         {
-            if(s.showUndistorsed)
-                msg = format( "%d/%d Undist", (int)imagePoints.size(), s.nrFrames );
+            if(s.showUndistorted)
+                msg = cv::format( "%d/%d Undist", (int)imagePoints.size(), s.nrFrames );
             else
                 msg = format( "%d/%d", (int)imagePoints.size(), s.nrFrames );
         }
@@ -387,11 +387,16 @@ int main(int argc, char* argv[])
         //! [output_text]
         //------------------------- Video capture  output  undistorted ------------------------------
         //! [output_undistorted]
-        if( mode == CALIBRATED && s.showUndistorsed )
+        if( mode == CALIBRATED && s.showUndistorted )
         {
             Mat temp = view.clone();
             if (s.useFisheye)
-              cv::fisheye::undistortImage(temp, view, cameraMatrix, distCoeffs);
+            {
+                Mat newCamMat;
+                fisheye::estimateNewCameraMatrixForUndistortRectify(cameraMatrix, distCoeffs, imageSize,
+                                                                    Matx33d::eye(), newCamMat, 1);
+                cv::fisheye::undistortImage(temp, view, cameraMatrix, distCoeffs, newCamMat);
+            }
             else
               undistort(temp, view, cameraMatrix, distCoeffs);
         }
@@ -405,7 +410,7 @@ int main(int argc, char* argv[])
             break;
 
         if( key == 'u' && mode == CALIBRATED )
-           s.showUndistorsed = !s.showUndistorsed;
+           s.showUndistorted = !s.showUndistorted;
 
         if( s.inputCapture.isOpened() && key == 'g' )
         {
@@ -417,7 +422,7 @@ int main(int argc, char* argv[])
 
     // -----------------------Show the undistorted image for the image list ------------------------
     //! [show_results]
-    if( s.inputType == Settings::IMAGE_LIST && s.showUndistorsed )
+    if( s.inputType == Settings::IMAGE_LIST && s.showUndistorted && !cameraMatrix.empty())
     {
         Mat view, rview, map1, map2;
 
@@ -519,7 +524,7 @@ static bool runCalibration( Settings& s, Size& imageSize, Mat& cameraMatrix, Mat
 {
     //! [fixed_aspect]
     cameraMatrix = Mat::eye(3, 3, CV_64F);
-    if( s.flag & CALIB_FIX_ASPECT_RATIO )
+    if( !s.useFisheye && s.flag & CALIB_FIX_ASPECT_RATIO )
         cameraMatrix.at<double>(0,0) = s.aspectRatio;
     //! [fixed_aspect]
     if (s.useFisheye) {
@@ -586,7 +591,7 @@ static void saveCameraParams( Settings& s, Size& imageSize, Mat& cameraMatrix, M
     fs << "board_height" << s.boardSize.height;
     fs << "square_size" << s.squareSize;
 
-    if( s.flag & CALIB_FIX_ASPECT_RATIO )
+    if( !s.useFisheye && s.flag & CALIB_FIX_ASPECT_RATIO )
         fs << "fix_aspect_ratio" << s.aspectRatio;
 
     if (s.flag)

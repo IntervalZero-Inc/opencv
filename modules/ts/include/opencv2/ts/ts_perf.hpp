@@ -386,7 +386,7 @@ public:
     static enum PERF_STRATEGY getCurrentModulePerformanceStrategy();
     static enum PERF_STRATEGY setModulePerformanceStrategy(enum PERF_STRATEGY strategy);
 
-    class PerfSkipTestException: public cv::Exception
+    class PerfSkipTestException: public cvtest::SkipTestException
     {
     public:
         int dummy; // workaround for MacOSX Xcode 7.3 bug (don't make class "empty")
@@ -453,9 +453,6 @@ private:
 
     performance_metrics metrics;
     void validateMetrics();
-
-    static int64 _timeadjustment;
-    static int64 _calibrate();
 
     static void warmup_impl(cv::Mat m, WarmUpType wtype);
     static int getSizeInBytes(cv::InputArray a);
@@ -531,7 +528,7 @@ void PrintTo(const Size& sz, ::std::ostream* os);
        ::cvtest::testSetUp(); \
        RunPerfTestBody(); \
        } \
-       catch (cvtest::SkipTestException& e) \
+       catch (cvtest::details::SkipTestExceptionBase& e) \
        { \
           printf("[     SKIP ] %s\n", e.what()); \
        } \

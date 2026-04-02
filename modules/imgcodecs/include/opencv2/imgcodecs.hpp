@@ -49,6 +49,7 @@
   @defgroup imgcodecs Image file reading and writing
   @{
     @defgroup imgcodecs_c C API
+    @defgroup imgcodecs_flags Flags used for image file reading and writing
     @defgroup imgcodecs_ios iOS glue
   @}
 */
@@ -60,9 +61,12 @@ namespace cv
 //! @addtogroup imgcodecs
 //! @{
 
+//! @addtogroup imgcodecs_flags
+//! @{
+
 //! Imread flags
 enum ImreadModes {
-       IMREAD_UNCHANGED            = -1, //!< If set, return the loaded image as is (with alpha channel, otherwise it gets cropped).
+       IMREAD_UNCHANGED            = -1, //!< If set, return the loaded image as is (with alpha channel, otherwise it gets cropped). Ignore EXIF orientation.
        IMREAD_GRAYSCALE            = 0,  //!< If set, always convert image to the single channel grayscale image (codec internal conversion).
        IMREAD_COLOR                = 1,  //!< If set, always convert image to the 3 channel BGR color image.
        IMREAD_ANYDEPTH             = 2,  //!< If set, return 16-bit/32-bit image when the input has the corresponding depth, otherwise convert it to 8-bit.
@@ -83,26 +87,38 @@ enum ImwriteFlags {
        IMWRITE_JPEG_PROGRESSIVE    = 2,  //!< Enable JPEG features, 0 or 1, default is False.
        IMWRITE_JPEG_OPTIMIZE       = 3,  //!< Enable JPEG features, 0 or 1, default is False.
        IMWRITE_JPEG_RST_INTERVAL   = 4,  //!< JPEG restart interval, 0 - 65535, default is 0 - no restart.
-       IMWRITE_JPEG_LUMA_QUALITY   = 5,  //!< Separate luma quality level, 0 - 100, default is 0 - don't use.
-       IMWRITE_JPEG_CHROMA_QUALITY = 6,  //!< Separate chroma quality level, 0 - 100, default is 0 - don't use.
+       IMWRITE_JPEG_LUMA_QUALITY   = 5,  //!< Separate luma quality level, 0 - 100, default is -1 - don't use.
+       IMWRITE_JPEG_CHROMA_QUALITY = 6,  //!< Separate chroma quality level, 0 - 100, default is -1 - don't use.
+       IMWRITE_JPEG_SAMPLING_FACTOR = 7, //!< For JPEG, set sampling factor. See cv::ImwriteJPEGSamplingFactorParams.
        IMWRITE_PNG_COMPRESSION     = 16, //!< For PNG, it can be the compression level from 0 to 9. A higher value means a smaller size and longer compression time. If specified, strategy is changed to IMWRITE_PNG_STRATEGY_DEFAULT (Z_DEFAULT_STRATEGY). Default value is 1 (best speed setting).
        IMWRITE_PNG_STRATEGY        = 17, //!< One of cv::ImwritePNGFlags, default is IMWRITE_PNG_STRATEGY_RLE.
        IMWRITE_PNG_BILEVEL         = 18, //!< Binary level PNG, 0 or 1, default is 0.
        IMWRITE_PXM_BINARY          = 32, //!< For PPM, PGM, or PBM, it can be a binary format flag, 0 or 1. Default value is 1.
        IMWRITE_EXR_TYPE            = (3 << 4) + 0, /* 48 */ //!< override EXR storage type (FLOAT (FP32) is default)
        IMWRITE_WEBP_QUALITY        = 64, //!< For WEBP, it can be a quality from 1 to 100 (the higher is the better). By default (without any parameter) and for quality above 100 the lossless compression is used.
+       IMWRITE_HDR_COMPRESSION     = (5 << 4) + 0, /* 80 */ //!< specify HDR compression
        IMWRITE_PAM_TUPLETYPE       = 128,//!< For PAM, sets the TUPLETYPE field to the corresponding string value that is defined for the format
-       IMWRITE_TIFF_RESUNIT = 256,//!< For TIFF, use to specify which DPI resolution unit to set; see libtiff documentation for valid values.
-       IMWRITE_TIFF_XDPI = 257,//!< For TIFF, use to specify the X direction DPI.
-       IMWRITE_TIFF_YDPI = 258, //!< For TIFF, use to specify the Y direction DPI.
-       IMWRITE_TIFF_COMPRESSION = 259 //!< For TIFF, use to specify the image compression scheme. See libtiff for integer constants corresponding to compression formats. Note, for images whose depth is CV_32F, only libtiff's SGILOG compression scheme is used. For other supported depths, the compression scheme can be specified by this flag; LZW compression is the default.
+       IMWRITE_TIFF_RESUNIT        = 256,//!< For TIFF, use to specify which DPI resolution unit to set; see libtiff documentation for valid values.
+       IMWRITE_TIFF_XDPI           = 257,//!< For TIFF, use to specify the X direction DPI.
+       IMWRITE_TIFF_YDPI           = 258,//!< For TIFF, use to specify the Y direction DPI.
+       IMWRITE_TIFF_COMPRESSION    = 259 //!< For TIFF, use to specify the image compression scheme. See libtiff for integer constants corresponding to compression formats. Note, for images whose depth is CV_32F, only libtiff's SGILOG compression scheme is used. For other supported depths, the compression scheme can be specified by this flag; LZW compression is the default.
      };
+
+enum ImwriteJPEGSamplingFactorParams {
+       IMWRITE_JPEG_SAMPLING_FACTOR_411 = 0x411111, //!< 4x1,1x1,1x1
+       IMWRITE_JPEG_SAMPLING_FACTOR_420 = 0x221111, //!< 2x2,1x1,1x1(Default)
+       IMWRITE_JPEG_SAMPLING_FACTOR_422 = 0x211111, //!< 2x1,1x1,1x1
+       IMWRITE_JPEG_SAMPLING_FACTOR_440 = 0x121111, //!< 1x2,1x1,1x1
+       IMWRITE_JPEG_SAMPLING_FACTOR_444 = 0x111111  //!< 1x1,1x1,1x1(No subsampling)
+     };
+
 
 enum ImwriteEXRTypeFlags {
        /*IMWRITE_EXR_TYPE_UNIT = 0, //!< not supported */
-       IMWRITE_EXR_TYPE_HALF = 1,   //!< store as HALF (FP16)
-       IMWRITE_EXR_TYPE_FLOAT = 2   //!< store as FP32 (default)
+       IMWRITE_EXR_TYPE_HALF   = 1, //!< store as HALF (FP16)
+       IMWRITE_EXR_TYPE_FLOAT  = 2  //!< store as FP32 (default)
      };
+
 
 //! Imwrite PNG specific flags used to tune the compression algorithm.
 /** These flags will be modify the way of PNG image compression and will be passed to the underlying zlib processing stage.
@@ -120,15 +136,23 @@ enum ImwritePNGFlags {
        IMWRITE_PNG_STRATEGY_FIXED        = 4  //!< Using this value prevents the use of dynamic Huffman codes, allowing for a simpler decoder for special applications.
      };
 
-//! Imwrite PAM specific tupletype flags used to define the 'TUPETYPE' field of a PAM file.
+//! Imwrite PAM specific tupletype flags used to define the 'TUPLETYPE' field of a PAM file.
 enum ImwritePAMFlags {
-       IMWRITE_PAM_FORMAT_NULL = 0,
-       IMWRITE_PAM_FORMAT_BLACKANDWHITE = 1,
-       IMWRITE_PAM_FORMAT_GRAYSCALE = 2,
+       IMWRITE_PAM_FORMAT_NULL            = 0,
+       IMWRITE_PAM_FORMAT_BLACKANDWHITE   = 1,
+       IMWRITE_PAM_FORMAT_GRAYSCALE       = 2,
        IMWRITE_PAM_FORMAT_GRAYSCALE_ALPHA = 3,
-       IMWRITE_PAM_FORMAT_RGB = 4,
-       IMWRITE_PAM_FORMAT_RGB_ALPHA = 5,
+       IMWRITE_PAM_FORMAT_RGB             = 4,
+       IMWRITE_PAM_FORMAT_RGB_ALPHA       = 5
      };
+
+//! Imwrite HDR specific values for IMWRITE_HDR_COMPRESSION parameter key
+enum ImwriteHDRCompressionFlags {
+    IMWRITE_HDR_COMPRESSION_NONE = 0,
+    IMWRITE_HDR_COMPRESSION_RLE = 1
+};
+
+//! @} imgcodecs_flags
 
 /** @brief Loads an image from a file.
 
@@ -170,8 +194,9 @@ Currently, the following file formats are supported:
     then the [GDAL](http://www.gdal.org) driver will be used in order to decode the image, supporting
     the following formats: [Raster](http://www.gdal.org/formats_list.html),
     [Vector](http://www.gdal.org/ogr_formats.html).
--   If EXIF information are embedded in the image file, the EXIF orientation will be taken into account
-    and thus the image will be rotated accordingly except if the flag @ref IMREAD_IGNORE_ORIENTATION is passed.
+-   If EXIF information is embedded in the image file, the EXIF orientation will be taken into account
+    and thus the image will be rotated accordingly except if the flags @ref IMREAD_IGNORE_ORIENTATION
+    or @ref IMREAD_UNCHANGED are passed.
 -   By default number of pixels must be less than 2^30. Limit can be set using system
     variable OPENCV_IO_MAX_IMAGE_PIXELS
 
@@ -184,8 +209,8 @@ CV_EXPORTS_W Mat imread( const String& filename, int flags = IMREAD_COLOR );
 
 The function imreadmulti loads a multi-page image from the specified file into a vector of Mat objects.
 @param filename Name of file to be loaded.
+@param mats A vector of Mat objects holding each page.
 @param flags Flag that can take values of cv::ImreadModes, default with cv::IMREAD_ANYCOLOR.
-@param mats A vector of Mat objects holding each page, if more than one.
 @sa cv::imread
 */
 CV_EXPORTS_W bool imreadmulti(const String& filename, CV_OUT std::vector<Mat>& mats, int flags = IMREAD_ANYCOLOR);
@@ -193,30 +218,50 @@ CV_EXPORTS_W bool imreadmulti(const String& filename, CV_OUT std::vector<Mat>& m
 /** @brief Saves an image to a specified file.
 
 The function imwrite saves the image to the specified file. The image format is chosen based on the
-filename extension (see cv::imread for the list of extensions). In general, only 8-bit
+filename extension (see cv::imread for the list of extensions). In general, only 8-bit unsigned (CV_8U)
 single-channel or 3-channel (with 'BGR' channel order) images
 can be saved using this function, with these exceptions:
 
-- 16-bit unsigned (CV_16U) images can be saved in the case of PNG, JPEG 2000, and TIFF formats
-- 32-bit float (CV_32F) images can be saved in TIFF, OpenEXR, and Radiance HDR formats; 3-channel
-(CV_32FC3) TIFF images will be saved using the LogLuv high dynamic range encoding (4 bytes per pixel)
-- PNG images with an alpha channel can be saved using this function. To do this, create
-8-bit (or 16-bit) 4-channel image BGRA, where the alpha channel goes last. Fully transparent pixels
-should have alpha set to 0, fully opaque pixels should have alpha set to 255/65535 (see the code sample below).
+- With OpenEXR encoder, only 32-bit float (CV_32F) images can be saved.
+  - 8-bit unsigned (CV_8U) images are not supported.
+- With Radiance HDR encoder, non 64-bit float (CV_64F) images can be saved.
+  - All images will be converted to 32-bit float (CV_32F).
+- With JPEG 2000 encoder, 8-bit unsigned (CV_8U) and 16-bit unsigned (CV_16U) images can be saved.
+- With PAM encoder, 8-bit unsigned (CV_8U) and 16-bit unsigned (CV_16U) images can be saved.
+- With PNG encoder, 8-bit unsigned (CV_8U) and 16-bit unsigned (CV_16U) images can be saved.
+  - PNG images with an alpha channel can be saved using this function. To do this, create
+    8-bit (or 16-bit) 4-channel image BGRA, where the alpha channel goes last. Fully transparent pixels
+    should have alpha set to 0, fully opaque pixels should have alpha set to 255/65535 (see the code sample below).
+- With PGM/PPM encoder, 8-bit unsigned (CV_8U) and 16-bit unsigned (CV_16U) images can be saved.
+- With TIFF encoder, 8-bit unsigned (CV_8U), 16-bit unsigned (CV_16U),
+                     32-bit float (CV_32F) and 64-bit float (CV_64F) images can be saved.
+  - Multiple images (vector of Mat) can be saved in TIFF format (see the code sample below).
+  - 32-bit float 3-channel (CV_32FC3) TIFF images will be saved
+    using the LogLuv high dynamic range encoding (4 bytes per pixel)
+
+If the image format is not supported, the image will be converted to 8-bit unsigned (CV_8U) and saved that way.
 
 If the format, depth or channel order is different, use
 Mat::convertTo and cv::cvtColor to convert it before saving. Or, use the universal FileStorage I/O
 functions to save the image to XML or YAML format.
 
-The sample below shows how to create a BGRA image and save it to a PNG file. It also demonstrates how to set custom
-compression parameters:
+The sample below shows how to create a BGRA image, how to set custom compression parameters and save it to a PNG file.
+It also demonstrates how to save multiple images in a TIFF file:
 @include snippets/imgcodecs_imwrite.cpp
 @param filename Name of the file.
-@param img Image to be saved.
+@param img (Mat or vector of Mat) Image or Images to be saved.
 @param params Format-specific parameters encoded as pairs (paramId_1, paramValue_1, paramId_2, paramValue_2, ... .) see cv::ImwriteFlags
 */
 CV_EXPORTS_W bool imwrite( const String& filename, InputArray img,
               const std::vector<int>& params = std::vector<int>());
+
+/// @overload multi-image overload for bindings
+CV_WRAP static inline
+bool imwritemulti(const String& filename, InputArrayOfArrays img,
+                  const std::vector<int>& params = std::vector<int>())
+{
+    return imwrite(filename, img, params);
+}
 
 /** @brief Reads an image from a buffer in memory.
 
@@ -244,7 +289,7 @@ CV_EXPORTS Mat imdecode( InputArray buf, int flags, Mat* dst);
 The function imencode compresses the image and stores it in the memory buffer that is resized to fit the
 result. See cv::imwrite for the list of supported formats and flags description.
 
-@param ext File extension that defines the output format.
+@param ext File extension that defines the output format. Must include a leading period.
 @param img Image to be written.
 @param buf Output buffer resized to fit the compressed image.
 @param params Format-specific parameters. See cv::imwrite and cv::ImwriteFlags.

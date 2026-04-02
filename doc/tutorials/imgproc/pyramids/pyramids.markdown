@@ -47,7 +47,7 @@ Theory
 -   To produce layer \f$(i+1)\f$ in the Gaussian pyramid, we do the following:
     -   Convolve \f$G_{i}\f$ with a Gaussian kernel:
 
-        \f[\frac{1}{16} \begin{bmatrix} 1 & 4 & 6 & 4 & 1  \\ 4 & 16 & 24 & 16 & 4  \\ 6 & 24 & 36 & 24 & 6  \\ 4 & 16 & 24 & 16 & 4  \\ 1 & 4 & 6 & 4 & 1 \end{bmatrix}\f]
+        \f[\frac{1}{256} \begin{bmatrix} 1 & 4 & 6 & 4 & 1  \\ 4 & 16 & 24 & 16 & 4  \\ 6 & 24 & 36 & 24 & 6  \\ 4 & 16 & 24 & 16 & 4  \\ 1 & 4 & 6 & 4 & 1 \end{bmatrix}\f]
 
     -   Remove every even-numbered row and column.
 
@@ -163,7 +163,7 @@ Our program exits if the user presses **ESC**. Besides, it has two options:
     We use the function **pyrDown()** with three arguments (similarly to **pyrUp()**):
             -   *src*: The current and destination image  (to be shown on screen, supposedly half the input
                 image)
-            -   *Size( tmp.cols/2, tmp.rows/2 )* : The destination size. Since we are upsampling,
+            -   *Size( tmp.cols/2, tmp.rows/2 )* : The destination size. Since we are downsampling,
                 **pyrDown()** expects half the size the input image (in this case *src*).
 
 @add_toggle_cpp

@@ -97,6 +97,11 @@ static void handleMessage(GstElement * pipeline);
 
 namespace {
 
+#if defined __clang__
+# pragma clang diagnostic push
+# pragma clang diagnostic ignored "-Wunused-function"
+#endif
+
 template<typename T> static inline void GSafePtr_addref(T* ptr)
 {
     if (ptr)
@@ -125,6 +130,10 @@ template<> inline void GSafePtr_release<GstEncodingContainerProfile>(GstEncoding
 template<> inline void GSafePtr_addref<char>(char* pPtr);  // declaration only. not defined. should not be used
 template<> inline void GSafePtr_release<char>(char** pPtr) { if (pPtr) { g_free(*pPtr); *pPtr = NULL; } }
 
+#if defined __clang__
+# pragma clang diagnostic pop
+#endif
+
 template <typename T>
 class GSafePtr
 {
@@ -148,14 +157,14 @@ public:
     inline operator T* () CV_NOEXCEPT { return ptr; }
     inline operator /*const*/ T* () const CV_NOEXCEPT { return (T*)ptr; }  // there is no const correctness in Gst C API
 
-    inline T* get() CV_NOEXCEPT { return ptr; }
-    inline /*const*/ T* get() const CV_NOEXCEPT { CV_Assert(ptr); return (T*)ptr; }  // there is no const correctness in Gst C API
+    T* get() { CV_Assert(ptr); return ptr; }
+    /*const*/ T* get() const { CV_Assert(ptr); return (T*)ptr; }  // there is no const correctness in Gst C API
 
-    inline const T* operator -> () const { CV_Assert(ptr); return ptr; }
+    const T* operator -> () const { CV_Assert(ptr); return ptr; }
     inline operator bool () const CV_NOEXCEPT { return ptr != NULL; }
     inline bool operator ! () const CV_NOEXCEPT { return ptr == NULL; }
 
-    inline T** getRef() { CV_Assert(ptr == NULL); return &ptr; }
+    T** getRef() { CV_Assert(ptr == NULL); return &ptr; }
 
     inline GSafePtr& reset(T* p) CV_NOEXCEPT // pass result of functions with "transfer floating" ownership
     {
@@ -207,10 +216,10 @@ private:
         call_deinit = utils::getConfigurationParameterBool("OPENCV_VIDEOIO_GSTREAMER_CALL_DEINIT", false);
 
         GSafePtr<GError> err;
-        gst_init_check(NULL, NULL, err.getRef());
-        if (err)
+        gboolean gst_init_res = gst_init_check(NULL, NULL, err.getRef());
+        if (!gst_init_res)
         {
-            CV_WARN("Can't initialize GStreamer: " << err->message);
+            CV_WARN("Can't initialize GStreamer: " << (err ? err->message : "<unknown reason>"));
             isFailed = true;
             return;
         }
@@ -325,7 +334,7 @@ GStreamerCapture::~GStreamerCapture()
 /*!
  * \brief CvCapture_GStreamer::grabFrame
  * \return
- * Grabs a sample from the pipeline, awaiting consumation by retreiveFrame.
+ * Grabs a sample from the pipeline, awaiting consumation by retrieveFrame.
  * The pipeline is started if it was not running yet
  */
 bool GStreamerCapture::grabFrame()
@@ -739,18 +748,20 @@ bool GStreamerCapture::open(const String &filename_)
     // else, we might have a file or a manual pipeline.
     // if gstreamer cannot parse the manual pipeline, we assume we were given and
     // ordinary file path.
+    CV_LOG_INFO(NULL, "OpenCV | GStreamer: " << filename);
     if (!gst_uri_is_valid(filename))
     {
         if (utils::fs::exists(filename_))
         {
-            uri.attach(g_filename_to_uri(filename, NULL, NULL));
+            GSafePtr<GError> err;
+            uri.attach(gst_filename_to_uri(filename, err.getRef()));
             if (uri)
             {
                 file = true;
             }
             else
             {
-                CV_WARN("Error opening file: " << filename << " (" << uri.get() << ")");
+                CV_WARN("Error opening file: " << filename << " (" << (err ? err->message : "<unknown reason>") << ")");
                 return false;
             }
         }
@@ -758,9 +769,9 @@ bool GStreamerCapture::open(const String &filename_)
         {
             GSafePtr<GError> err;
             uridecodebin.attach(gst_parse_launch(filename, err.getRef()));
-            if (err)
+            if (!uridecodebin)
             {
-                CV_WARN("Error opening bin: " << err->message);
+                CV_WARN("Error opening bin: " << (err ? err->message : "<unknown reason>"));
                 return false;
             }
             manualpipeline = true;
@@ -770,7 +781,7 @@ bool GStreamerCapture::open(const String &filename_)
     {
         uri.attach(g_strdup(filename));
     }
-
+    CV_LOG_INFO(NULL, "OpenCV | GStreamer: mode - " << (file ? "FILE" : manualpipeline ? "MANUAL" : "URI"));
     bool element_from_uri = false;
     if (!uridecodebin)
     {
@@ -913,6 +924,11 @@ bool GStreamerCapture::open(const String &filename_)
         gst_app_sink_set_max_buffers(GST_APP_SINK(sink.get()), 1);
     }
 
+    if (!manualpipeline)
+    {
+        gst_base_sink_set_sync(GST_BASE_SINK(sink.get()), FALSE);
+    }
+
     //do not emit signals: all calls will be synchronous and blocking
     gst_app_sink_set_emit_signals (GST_APP_SINK(sink.get()), FALSE);
 
@@ -1034,7 +1050,7 @@ bool GStreamerCapture::open(const String &filename_)
  * \return property value
  *
  * There are two ways the properties can be retrieved. For seek-based properties we can query the pipeline.
- * For frame-based properties, we use the caps of the lasst receivef sample. This means that some properties
+ * For frame-based properties, we use the caps of the last receivef sample. This means that some properties
  * are not available until a first frame was received
  */
 double GStreamerCapture::getProperty(int propId) const
@@ -1051,6 +1067,8 @@ double GStreamerCapture::getProperty(int propId) const
     switch(propId)
     {
     case CV_CAP_PROP_POS_MSEC:
+        CV_LOG_ONCE_WARNING(NULL, "OpenCV | GStreamer: CAP_PROP_POS_MSEC property result may be unrealiable: "
+                                  "https://github.com/opencv/opencv/issues/19025");
         format = GST_FORMAT_TIME;
         status = gst_element_query_position(sink.get(), CV_GST_FORMAT(format), &value);
         if(!status) {
@@ -1304,7 +1322,21 @@ public:
           num_frames(0), framerate(0)
     {
     }
-    virtual ~CvVideoWriter_GStreamer() CV_OVERRIDE { close(); }
+    virtual ~CvVideoWriter_GStreamer() CV_OVERRIDE
+    {
+        try
+        {
+            close();
+        }
+        catch (const std::exception& e)
+        {
+            CV_WARN("C++ exception in writer destructor: " << e.what());
+        }
+        catch (...)
+        {
+            CV_WARN("Unknown exception in writer destructor. Ignore");
+        }
+    }
 
     int getCaptureDomain() const CV_OVERRIDE { return cv::CAP_GSTREAMER; }
 
@@ -1336,7 +1368,11 @@ void CvVideoWriter_GStreamer::close_()
     {
         handleMessage(pipeline);
 
-        if (gst_app_src_end_of_stream(GST_APP_SRC(source.get())) != GST_FLOW_OK)
+        if (!(bool)source)
+        {
+            CV_WARN("No source in GStreamer pipeline. Ignore");
+        }
+        else if (gst_app_src_end_of_stream(GST_APP_SRC(source.get())) != GST_FLOW_OK)
         {
             CV_WARN("Cannot send EOS to GStreamer pipeline");
         }
@@ -1943,7 +1979,7 @@ void handleMessage(GstElement * pipeline)
                 gst_message_parse_error(msg, err.getRef(), debug.getRef());
                 GSafePtr<gchar> name; name.attach(gst_element_get_name(GST_MESSAGE_SRC (msg)));
                 CV_WARN("Embedded video playback halted; module " << name.get() <<
-                        " reported: " << err->message);
+                        " reported: " << (err ? err->message : "<unknown reason>"));
                 CV_LOG_DEBUG(NULL, "GStreamer debug: " << debug.get());
 
                 gst_element_set_state(GST_ELEMENT(pipeline), GST_STATE_NULL);

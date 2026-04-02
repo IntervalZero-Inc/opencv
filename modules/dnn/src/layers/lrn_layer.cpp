@@ -44,6 +44,8 @@
 #include "layers_common.hpp"
 #include "../op_halide.hpp"
 #include "../op_inf_engine.hpp"
+#include "../ie_ngraph.hpp"
+
 #include "opencv2/imgproc.hpp"
 #include "opencv2/dnn/shape_utils.hpp"
 #include "opencv2/core/hal/hal.hpp"
@@ -78,7 +80,7 @@ public:
         if (size % 2 != 1 || size <= 0)
             CV_Error(Error::StsBadArg, "LRN layer supports only positive odd values for local_size");
 
-        alpha = params.get<double>("alpha", 1);
+        alpha = params.get<double>("alpha", 0.0001);
         beta = params.get<double>("beta", 0.75);
         bias = params.get<double>("bias", 1);
         normBySize = params.get<bool>("norm_by_size", true);
@@ -90,9 +92,12 @@ public:
 
     virtual bool supportBackend(int backendId) CV_OVERRIDE
     {
-        if (backendId == DNN_BACKEND_INFERENCE_ENGINE)
+#ifdef HAVE_INF_ENGINE
+        if (backendId == DNN_BACKEND_INFERENCE_ENGINE_NGRAPH)
             return bias == (int)bias;
-        return backendId == DNN_BACKEND_OPENCV || backendId == DNN_BACKEND_HALIDE;
+#endif
+        return backendId == DNN_BACKEND_OPENCV ||
+               backendId == DNN_BACKEND_HALIDE;
     }
 
 #ifdef HAVE_OPENCL
@@ -379,24 +384,27 @@ public:
 #endif  // HAVE_HALIDE
     }
 
-#ifdef HAVE_INF_ENGINE
-    virtual Ptr<BackendNode> initInfEngine(const std::vector<Ptr<BackendWrapper> >&) CV_OVERRIDE
+
+#ifdef HAVE_DNN_NGRAPH
+    virtual Ptr<BackendNode> initNgraph(const std::vector<Ptr<BackendWrapper> >& inputs, const std::vector<Ptr<BackendNode> >& nodes) CV_OVERRIDE
     {
         float alphaSize = alpha;
         if (!normBySize)
             alphaSize *= (type == SPATIAL_NRM ? size*size : size);
 
-        InferenceEngine::Builder::NormLayer ieLayer(name);
-        ieLayer.setSize(size);
-        ieLayer.setAlpha(alphaSize);
-        ieLayer.setBeta(beta);
-        ieLayer.setAcrossMaps(type == CHANNEL_NRM);
-
-        InferenceEngine::Builder::Layer l = ieLayer;
-        l.getParameters()["k"] = bias;
-        return Ptr<BackendNode>(new InfEngineBackendNode(l));
+        auto& ieInpNode = nodes[0].dynamicCast<InfEngineNgraphNode>()->node;
+        std::vector<int64_t> axes;
+        if (type != SPATIAL_NRM) {
+            axes = {1};
+        } else {
+            axes.resize(ieInpNode->get_shape().size() - 2);
+            std::iota(axes.begin(), axes.end(), 2);
+        }
+        auto ngraph_axes = std::make_shared<ngraph::op::Constant>(ngraph::element::i64, ngraph::Shape{axes.size()}, axes.data());
+        auto lrn = std::make_shared<ngraph::op::LRN>(ieInpNode, ngraph_axes, alphaSize, beta, bias, size);
+        return Ptr<BackendNode>(new InfEngineNgraphNode(lrn));
     }
-#endif  // HAVE_INF_ENGINE
+#endif  // HAVE_DNN_NGRAPH
 
     virtual int64 getFLOPS(const std::vector<MatShape> &inputs,
                            const std::vector<MatShape> &outputs) const CV_OVERRIDE

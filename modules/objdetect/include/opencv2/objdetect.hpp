@@ -376,7 +376,7 @@ public:
          };
     enum { DEFAULT_NLEVELS = 64 //!< Default nlevels value.
          };
-    /**@brief Creates the HOG descriptor and detector with default params.
+    /**@brief Creates the HOG descriptor and detector with default parameters.
 
     aqual to HOGDescriptor(Size(64,128), Size(16,16), Size(8,8), Size(8,8), 9, 1 )
     */
@@ -412,6 +412,8 @@ public:
     {}
 
     /** @overload
+
+    Creates the HOG descriptor and detector and loads HOGDescriptor parameters and coefficients for the linear SVM classifier from a file.
     @param filename the file name containing  HOGDescriptor properties and coefficients of the trained classifier
     */
     CV_WRAP HOGDescriptor(const String& filename)
@@ -450,24 +452,24 @@ public:
     */
     CV_WRAP virtual void setSVMDetector(InputArray _svmdetector);
 
-    /** @brief Reads HOGDescriptor parameters from a file node.
+    /** @brief Reads HOGDescriptor parameters and coefficients for the linear SVM classifier from a file node.
     @param fn File node
     */
     virtual bool read(FileNode& fn);
 
-    /** @brief Stores HOGDescriptor parameters in a file storage.
+    /** @brief Stores HOGDescriptor parameters and coefficients for the linear SVM classifier in a file storage.
     @param fs File storage
     @param objname Object name
     */
     virtual void write(FileStorage& fs, const String& objname) const;
 
-    /** @brief loads coefficients for the linear SVM classifier from a file
+    /** @brief loads HOGDescriptor parameters and coefficients for the linear SVM classifier from a file
     @param filename Name of the file to read.
     @param objname The optional name of the node to read (if empty, the first top-level node will be used).
     */
     CV_WRAP virtual bool load(const String& filename, const String& objname = String());
 
-    /** @brief saves coefficients for the linear SVM classifier to a file
+    /** @brief saves HOGDescriptor parameters and coefficients for the linear SVM classifier to a file
     @param filename File name
     @param objname Object name
     */
@@ -535,13 +537,14 @@ public:
     @param winStride Window stride. It must be a multiple of block stride.
     @param padding Padding
     @param scale Coefficient of the detection window increase.
-    @param finalThreshold Final threshold
+    @param groupThreshold Coefficient to regulate the similarity threshold. When detected, some objects can be covered
+    by many rectangles. 0 means not to perform grouping.
     @param useMeanshiftGrouping indicates grouping algorithm
     */
     CV_WRAP virtual void detectMultiScale(InputArray img, CV_OUT std::vector<Rect>& foundLocations,
                                   CV_OUT std::vector<double>& foundWeights, double hitThreshold = 0,
                                   Size winStride = Size(), Size padding = Size(), double scale = 1.05,
-                                  double finalThreshold = 2.0,bool useMeanshiftGrouping = false) const;
+                                  double groupThreshold = 2.0, bool useMeanshiftGrouping = false) const;
 
     /** @brief Detects objects of different sizes in the input image. The detected objects are returned as a list
     of rectangles.
@@ -553,13 +556,14 @@ public:
     @param winStride Window stride. It must be a multiple of block stride.
     @param padding Padding
     @param scale Coefficient of the detection window increase.
-    @param finalThreshold Final threshold
+    @param groupThreshold Coefficient to regulate the similarity threshold. When detected, some objects can be covered
+    by many rectangles. 0 means not to perform grouping.
     @param useMeanshiftGrouping indicates grouping algorithm
     */
     virtual void detectMultiScale(InputArray img, CV_OUT std::vector<Rect>& foundLocations,
                                   double hitThreshold = 0, Size winStride = Size(),
                                   Size padding = Size(), double scale = 1.05,
-                                  double finalThreshold = 2.0, bool useMeanshiftGrouping = false) const;
+                                  double groupThreshold = 2.0, bool useMeanshiftGrouping = false) const;
 
     /** @brief  Computes gradients and quantized gradient orientations.
     @param img Matrix contains the image to be computed
@@ -670,6 +674,69 @@ public:
     void groupRectangles(std::vector<cv::Rect>& rectList, std::vector<double>& weights, int groupThreshold, double eps) const;
 };
 
+class CV_EXPORTS_W QRCodeEncoder {
+protected:
+    QRCodeEncoder();  // use ::create()
+public:
+    virtual ~QRCodeEncoder();
+
+    enum EncodeMode {
+        MODE_AUTO              = -1,
+        MODE_NUMERIC           = 1, // 0b0001
+        MODE_ALPHANUMERIC      = 2, // 0b0010
+        MODE_BYTE              = 4, // 0b0100
+        MODE_ECI               = 7, // 0b0111
+        MODE_KANJI             = 8, // 0b1000
+        MODE_STRUCTURED_APPEND = 3  // 0b0011
+    };
+
+    enum CorrectionLevel {
+        CORRECT_LEVEL_L = 0,
+        CORRECT_LEVEL_M = 1,
+        CORRECT_LEVEL_Q = 2,
+        CORRECT_LEVEL_H = 3
+    };
+
+    enum ECIEncodings {
+        ECI_UTF8 = 26
+    };
+
+    /** @brief QR code encoder parameters.
+     @param version The optional version of QR code (by default - maximum possible depending on
+                    the length of the string).
+     @param correction_level The optional level of error correction (by default - the lowest).
+     @param mode The optional encoding mode - Numeric, Alphanumeric, Byte, Kanji, ECI or Structured Append.
+     @param structure_number The optional number of QR codes to generate in Structured Append mode.
+    */
+    struct CV_EXPORTS_W_SIMPLE Params
+    {
+        CV_WRAP Params();
+        CV_PROP_RW int version;
+        CV_PROP_RW CorrectionLevel correction_level;
+        CV_PROP_RW EncodeMode mode;
+        CV_PROP_RW int structure_number;
+    };
+
+    /** @brief Constructor
+    @param parameters QR code encoder parameters QRCodeEncoder::Params
+    */
+    static CV_WRAP
+    Ptr<QRCodeEncoder> create(const QRCodeEncoder::Params& parameters = QRCodeEncoder::Params());
+
+    /** @brief Generates QR code from input string.
+     @param encoded_info Input string to encode.
+     @param qrcode Generated QR code.
+    */
+    CV_WRAP virtual void encode(const String& encoded_info, OutputArray qrcode) = 0;
+
+    /** @brief Generates QR code from input string in Structured Append mode. The encoded message is splitting over a number of QR codes.
+     @param encoded_info Input string to encode.
+     @param qrcodes Vector of generated QR codes.
+    */
+    CV_WRAP virtual void encodeStructuredAppend(const String& encoded_info, OutputArrayOfArrays qrcodes) = 0;
+
+};
+
 class CV_EXPORTS_W QRCodeDetector
 {
 public:
@@ -694,22 +761,111 @@ public:
     CV_WRAP bool detect(InputArray img, OutputArray points) const;
 
     /** @brief Decodes QR code in image once it's found by the detect() method.
-     Returns UTF8-encoded output string or empty string if the code cannot be decoded.
 
+     Returns UTF8-encoded output string or empty string if the code cannot be decoded.
      @param img grayscale or color (BGR) image containing QR code.
      @param points Quadrangle vertices found by detect() method (or some other algorithm).
      @param straight_qrcode The optional output image containing rectified and binarized QR code
      */
     CV_WRAP cv::String decode(InputArray img, InputArray points, OutputArray straight_qrcode = noArray());
 
+    /** @brief Decodes QR code on a curved surface in image once it's found by the detect() method.
+
+     Returns UTF8-encoded output string or empty string if the code cannot be decoded.
+     @param img grayscale or color (BGR) image containing QR code.
+     @param points Quadrangle vertices found by detect() method (or some other algorithm).
+     @param straight_qrcode The optional output image containing rectified and binarized QR code
+     */
+    CV_WRAP cv::String decodeCurved(InputArray img, InputArray points, OutputArray straight_qrcode = noArray());
+
     /** @brief Both detects and decodes QR code
 
      @param img grayscale or color (BGR) image containing QR code.
-     @param points opiotnal output array of vertices of the found QR code quadrangle. Will be empty if not found.
+     @param points optional output array of vertices of the found QR code quadrangle. Will be empty if not found.
      @param straight_qrcode The optional output image containing rectified and binarized QR code
      */
     CV_WRAP cv::String detectAndDecode(InputArray img, OutputArray points=noArray(),
-                                        OutputArray straight_qrcode = noArray());
+                                       OutputArray straight_qrcode = noArray());
+
+    /** @brief Both detects and decodes QR code on a curved surface
+
+     @param img grayscale or color (BGR) image containing QR code.
+     @param points optional output array of vertices of the found QR code quadrangle. Will be empty if not found.
+     @param straight_qrcode The optional output image containing rectified and binarized QR code
+     */
+    CV_WRAP cv::String detectAndDecodeCurved(InputArray img, OutputArray points=noArray(),
+                                             OutputArray straight_qrcode = noArray());
+
+    /** @brief Detects QR codes in image and returns the vector of the quadrangles containing the codes.
+     @param img grayscale or color (BGR) image containing (or not) QR codes.
+     @param points Output vector of vector of vertices of the minimum-area quadrangle containing the codes.
+     */
+    CV_WRAP
+    bool detectMulti(InputArray img, OutputArray points) const;
+
+    /** @brief Decodes QR codes in image once it's found by the detect() method.
+     @param img grayscale or color (BGR) image containing QR codes.
+     @param decoded_info UTF8-encoded output vector of string or empty vector of string if the codes cannot be decoded.
+     @param points vector of Quadrangle vertices found by detect() method (or some other algorithm).
+     @param straight_qrcode The optional output vector of images containing rectified and binarized QR codes
+     */
+    CV_WRAP
+    bool decodeMulti(
+            InputArray img, InputArray points,
+            CV_OUT std::vector<cv::String>& decoded_info,
+            OutputArrayOfArrays straight_qrcode = noArray()
+    ) const;
+
+    /** @brief Both detects and decodes QR codes
+    @param img grayscale or color (BGR) image containing QR codes.
+    @param decoded_info UTF8-encoded output vector of string or empty vector of string if the codes cannot be decoded.
+    @param points optional output vector of vertices of the found QR code quadrangles. Will be empty if not found.
+    @param straight_qrcode The optional output vector of images containing rectified and binarized QR codes
+    */
+    CV_WRAP
+    bool detectAndDecodeMulti(
+            InputArray img, CV_OUT std::vector<cv::String>& decoded_info,
+            OutputArray points = noArray(),
+            OutputArrayOfArrays straight_qrcode = noArray()
+    ) const;
+
+
+#ifndef CV_DOXYGEN  // COMPATIBILITY
+    inline bool decodeMulti(
+            InputArray img, InputArray points,
+            CV_OUT std::vector<std::string>& decoded_info,
+            OutputArrayOfArrays straight_qrcode = noArray()
+        ) const
+    {
+        std::vector<cv::String> decoded_info_;
+        bool res = decodeMulti(img, points, decoded_info_, straight_qrcode);
+        decoded_info.resize(decoded_info_.size());
+        for (size_t i = 0; i < decoded_info.size(); ++i)
+        {
+            cv::String s; std::swap(s, decoded_info_[i]);
+            decoded_info[i] = s;
+        }
+        return res;
+    }
+
+    inline bool detectAndDecodeMulti(
+            InputArray img, CV_OUT std::vector<std::string>& decoded_info,
+            OutputArray points = noArray(),
+            OutputArrayOfArrays straight_qrcode = noArray()
+        ) const
+    {
+        std::vector<cv::String> decoded_info_;
+        bool res = detectAndDecodeMulti(img, decoded_info_, points, straight_qrcode);
+        decoded_info.resize(decoded_info_.size());
+        for (size_t i = 0; i < decoded_info.size(); ++i)
+        {
+            cv::String s; std::swap(s, decoded_info_[i]);
+            decoded_info[i] = s;
+        }
+        return res;
+    }
+#endif
+
 protected:
     struct Impl;
     Ptr<Impl> p;
@@ -730,6 +886,14 @@ CV_EXPORTS bool detectQRCode(InputArray in, std::vector<Point> &points, double e
     @param straight_qrcode Matrix of the type CV_8UC1 containing an binary straight QR code.
     */
 CV_EXPORTS bool decodeQRCode(InputArray in, InputArray points, std::string &decoded_info, OutputArray straight_qrcode = noArray());
+
+/** @brief Decode QR code on a curved surface in image and return text that is encrypted in QR code.
+    @param in  Matrix of the type CV_8UC1 containing an image where QR code are detected.
+    @param points Input vector of vertices of a quadrangle of minimal area that describes QR code.
+    @param decoded_info String information that is encrypted in QR code.
+    @param straight_qrcode Matrix of the type CV_8UC1 containing an binary straight QR code.
+    */
+CV_EXPORTS bool decodeCurvedQRCode(InputArray in, InputArray points, std::string &decoded_info, OutputArray straight_qrcode = noArray());
 
 //! @} objdetect
 }

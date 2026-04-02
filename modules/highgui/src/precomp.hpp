@@ -58,7 +58,6 @@
 #include <string.h>
 #include <limits.h>
 #include <ctype.h>
-#include <assert.h>
 
 #if defined _WIN32 || defined WINCE
     #include <windows.h>
@@ -115,6 +114,12 @@ double cvGetOpenGlProp_W32(const char* name);
 double cvGetOpenGlProp_GTK(const char* name);
 
 double cvGetPropVisible_W32(const char* name);
+
+double cvGetPropTopmost_W32(const char* name);
+double cvGetPropTopmost_COCOA(const char* name);
+
+void cvSetPropTopmost_W32(const char* name, const bool topmost);
+void cvSetPropTopmost_COCOA(const char* name, const bool topmost);
 
 //for QT
 #if defined (HAVE_QT)

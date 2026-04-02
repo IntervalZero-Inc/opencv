@@ -1,6 +1,9 @@
 Using OpenCV with Eclipse (plugin CDT) {#tutorial_linux_eclipse}
 ======================================
 
+@prev_tutorial{tutorial_linux_gcc_cmake}
+@next_tutorial{tutorial_windows_install}
+
 Prerequisites
 -------------
 Two ways, one by forming a project directly, and another by CMake Prerequisites
@@ -52,7 +55,7 @@ Making a project
     int main( int argc, char** argv )
     {
       Mat image;
-      image = imread( argv[1], 1 );
+      image = imread( argv[1], IMREAD_COLOR );
 
       if( argc != 2 || !image.data )
         {

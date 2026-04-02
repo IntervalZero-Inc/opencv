@@ -356,7 +356,7 @@ static void cvImageWidget_set_size(GtkWidget * widget, int max_width, int max_he
 
 
     }
-    assert( image_widget->scaled_image );
+    CV_Assert( image_widget->scaled_image );
 }
 
 static void
@@ -612,19 +612,33 @@ static std::vector< Ptr<CvWindow> > g_windows;
 CV_IMPL int cvInitSystem( int argc, char** argv )
 {
     static int wasInitialized = 0;
+    static bool hasError = false;
 
     // check initialization status
     if( !wasInitialized )
     {
-        gtk_init( &argc, &argv );
+        if (!gtk_init_check(&argc, &argv))
+        {
+            hasError = true;
+            wasInitialized = true;
+            CV_Error(Error::StsError, "Can't initialize GTK backend");
+        }
+
         setlocale(LC_NUMERIC,"C");
 
         #ifdef HAVE_OPENGL
-            gtk_gl_init(&argc, &argv);
+            if (!gtk_gl_init_check(&argc, &argv))
+            {
+                hasError = true;
+                wasInitialized = true;
+                CV_Error(Error::StsError, "Can't initialize GTK-OpenGL backend");
+            }
         #endif
 
         wasInitialized = 1;
     }
+    if (hasError)
+       CV_Error(Error::StsError, "GTK backend is not available");
 
     return 0;
 }
@@ -634,10 +648,13 @@ CV_IMPL int cvStartWindowThread(){
     cvInitSystem(0,NULL);
     if (!thread_started)
     {
-       if (!g_thread_supported ()) {
+#if !GLIB_CHECK_VERSION(2, 32, 0)  // https://github.com/GNOME/glib/blame/b4d58a7105bb9d75907233968bb534b38f9a6e43/glib/deprecated/gthread.h#L274
+       if (!g_thread_supported ())
+       {
            /* the GThread system wasn't inited, so init it */
            g_thread_init(NULL);
        }
+#endif
 
        (void)getWindowMutex();  // force mutex initialization
 
@@ -1754,24 +1771,26 @@ static gboolean icvOnClose( GtkWidget* widget, GdkEvent* /*event*/, gpointer use
 static gboolean icvOnMouse( GtkWidget *widget, GdkEvent *event, gpointer user_data )
 {
     // TODO move this logic to CvImageWidget
+    // TODO add try-catch wrappers into all callbacks
     CvWindow* window = (CvWindow*)user_data;
+    if (!window || !widget ||
+        window->signature != CV_WINDOW_MAGIC_VAL ||
+        window->widget != widget ||
+        !window->on_mouse)
+        return FALSE;
+
     CvPoint2D32f pt32f = {-1., -1.};
     CvPoint pt = {-1,-1};
     int cv_event = -1, state = 0, flags = 0;
     CvImageWidget * image_widget = CV_IMAGE_WIDGET( widget );
-
-    if( window->signature != CV_WINDOW_MAGIC_VAL ||
-        window->widget != widget || !window->widget ||
-        !window->on_mouse /*|| !image_widget->original_image*/)
-        return FALSE;
 
     if( event->type == GDK_MOTION_NOTIFY )
     {
         GdkEventMotion* event_motion = (GdkEventMotion*)event;
 
         cv_event = CV_EVENT_MOUSEMOVE;
-        pt32f.x = cvRound(event_motion->x);
-        pt32f.y = cvRound(event_motion->y);
+        pt32f.x = cvFloor(event_motion->x);
+        pt32f.y = cvFloor(event_motion->y);
         state = event_motion->state;
     }
     else if( event->type == GDK_BUTTON_PRESS ||
@@ -1779,8 +1798,8 @@ static gboolean icvOnMouse( GtkWidget *widget, GdkEvent *event, gpointer user_da
              event->type == GDK_2BUTTON_PRESS )
     {
         GdkEventButton* event_button = (GdkEventButton*)event;
-        pt32f.x = cvRound(event_button->x);
-        pt32f.y = cvRound(event_button->y);
+        pt32f.x = cvFloor(event_button->x);
+        pt32f.y = cvFloor(event_button->y);
 
 
         if( event_button->type == GDK_BUTTON_PRESS )
@@ -1805,10 +1824,14 @@ static gboolean icvOnMouse( GtkWidget *widget, GdkEvent *event, gpointer user_da
     }
     else if( event->type == GDK_SCROLL )
     {
+        GdkEventScroll* event_scroll = (GdkEventScroll*)event;
+        pt32f.x = cvFloor(event_scroll->x);
+        pt32f.y = cvFloor(event_scroll->y);
+
 #if defined(GTK_VERSION3_4)
-        // NOTE: in current implementation doesn't possible to put into callback function delta_x and delta_y separetely
+        // NOTE: in current implementation doesn't possible to put into callback function delta_x and delta_y separately
         double delta = (event->scroll.delta_x + event->scroll.delta_y);
-        cv_event   = (event->scroll.delta_y!=0) ? CV_EVENT_MOUSEHWHEEL : CV_EVENT_MOUSEWHEEL;
+        cv_event   = (event->scroll.delta_x==0) ? CV_EVENT_MOUSEWHEEL : CV_EVENT_MOUSEHWHEEL;
 #else
         cv_event = CV_EVENT_MOUSEWHEEL;
 #endif //GTK_VERSION3_4
@@ -1857,16 +1880,23 @@ static gboolean icvOnMouse( GtkWidget *widget, GdkEvent *event, gpointer user_da
             pt = cvPointFrom32f( pt32f );
         }
 
-//        if((unsigned)pt.x < (unsigned)(image_widget->original_image->width) &&
-//           (unsigned)pt.y < (unsigned)(image_widget->original_image->height) )
+        if (!image_widget->original_image/*OpenGL*/ || (
+               (unsigned)pt.x < (unsigned)(image_widget->original_image->width) &&
+               (unsigned)pt.y < (unsigned)(image_widget->original_image->height)
+            ))
         {
-            flags |= BIT_MAP(state, GDK_SHIFT_MASK,   CV_EVENT_FLAG_SHIFTKEY) |
-                BIT_MAP(state, GDK_CONTROL_MASK, CV_EVENT_FLAG_CTRLKEY)  |
-                BIT_MAP(state, GDK_MOD1_MASK,    CV_EVENT_FLAG_ALTKEY)   |
-                BIT_MAP(state, GDK_MOD2_MASK,    CV_EVENT_FLAG_ALTKEY)   |
+            // handle non-keyboard (mouse) modifiers first
+            flags |=
                 BIT_MAP(state, GDK_BUTTON1_MASK, CV_EVENT_FLAG_LBUTTON)  |
                 BIT_MAP(state, GDK_BUTTON2_MASK, CV_EVENT_FLAG_MBUTTON)  |
                 BIT_MAP(state, GDK_BUTTON3_MASK, CV_EVENT_FLAG_RBUTTON);
+            // keyboard modifiers
+            state &= gtk_accelerator_get_default_mod_mask();
+            flags |=
+                BIT_MAP(state, GDK_SHIFT_MASK,   CV_EVENT_FLAG_SHIFTKEY) |
+                BIT_MAP(state, GDK_CONTROL_MASK, CV_EVENT_FLAG_CTRLKEY)  |
+                BIT_MAP(state, GDK_MOD1_MASK,    CV_EVENT_FLAG_ALTKEY)   |
+                BIT_MAP(state, GDK_MOD2_MASK,    CV_EVENT_FLAG_ALTKEY);
             window->on_mouse( cv_event, pt.x, pt.y, flags, window->on_mouse_param );
         }
     }

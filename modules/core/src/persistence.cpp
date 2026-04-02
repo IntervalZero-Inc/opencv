@@ -6,6 +6,8 @@
 #include "precomp.hpp"
 #include "persistence.hpp"
 
+using namespace cv;
+
 char* icv_itoa( int _val, char* buffer, int /*radix*/ )
 {
     const int radix = 10;
@@ -145,7 +147,7 @@ CvGenericHash* cvCreateMap( int flags, int header_size, int elem_size, CvMemStor
     return map;
 }
 
-void icvParseError( CvFileStorage* fs, const char* func_name,
+void icvParseError(const CvFileStorage* fs, const char* func_name,
                const char* err_msg, const char* source_file, int source_line )
 {
     cv::String msg = cv::format("%s(%d): %s", fs->filename, fs->lineno, err_msg);
@@ -158,7 +160,7 @@ void icvFSCreateCollection( CvFileStorage* fs, int tag, CvFileNode* collection )
     {
         if( collection->tag != CV_NODE_NONE )
         {
-            assert( fs->fmt == CV_STORAGE_FORMAT_XML );
+            CV_Assert( fs->fmt == CV_STORAGE_FORMAT_XML );
             CV_PARSE_ERROR( "Sequence element should not have name (use <_></_>)" );
         }
 
@@ -251,9 +253,9 @@ void icvClose( CvFileStorage* fs, cv::String* out )
             else if ( fs->fmt == CV_STORAGE_FORMAT_JSON )
                 icvPuts( fs, "}\n" );
         }
-
-        icvCloseFile(fs);
     }
+
+    icvCloseFile(fs);
 
     if( fs->outbuf && out )
     {
@@ -519,12 +521,16 @@ static const char symbols[9] = "ucwsifdr";
 
 char icvTypeSymbol(int depth)
 {
-    CV_Assert(depth >=0 && depth < 9);
+    CV_StaticAssert(CV_64F == 6, "");
+    CV_Assert(depth >=0 && depth <= CV_64F);
+    CV_CheckDepth(depth, depth >=0 && depth <= CV_64F, "");
     return symbols[depth];
 }
 
 static int icvSymbolToType(char c)
 {
+    if (c == 'r')
+        return CV_SEQ_ELTYPE_PTR;
     const char* pos = strchr( symbols, c );
     if( !pos )
         CV_Error( CV_StsBadArg, "Invalid data type specification" );
@@ -545,7 +551,7 @@ int icvDecodeFormat( const char* dt, int* fmt_pairs, int max_len )
     if( !dt || !len )
         return 0;
 
-    assert( fmt_pairs != 0 && max_len > 0 );
+    CV_Assert( fmt_pairs != 0 && max_len > 0 );
     fmt_pairs[0] = 0;
     max_len *= 2;
 
@@ -618,8 +624,12 @@ int icvCalcStructSize( const char* dt, int initial_size )
 {
     int size = icvCalcElemSize( dt, initial_size );
     size_t elem_max_size = 0;
-    for ( const char * type = dt; *type != '\0'; type++ ) {
-        switch ( *type )
+    for ( const char * type = dt; *type != '\0'; type++ )
+    {
+        char v = *type;
+        if (v >= '0' && v <= '9')
+            continue;  // skip vector size
+        switch (v)
         {
         case 'u': { elem_max_size = std::max( elem_max_size, sizeof(uchar ) ); break; }
         case 'c': { elem_max_size = std::max( elem_max_size, sizeof(schar ) ); break; }
@@ -628,7 +638,8 @@ int icvCalcStructSize( const char* dt, int initial_size )
         case 'i': { elem_max_size = std::max( elem_max_size, sizeof(int   ) ); break; }
         case 'f': { elem_max_size = std::max( elem_max_size, sizeof(float ) ); break; }
         case 'd': { elem_max_size = std::max( elem_max_size, sizeof(double) ); break; }
-        default: break;
+        default:
+            CV_Error_(Error::StsNotImplemented, ("Unknown type identifier: '%c' in '%s'", (char)(*type), dt));
         }
     }
     size = cvAlign( size, static_cast<int>(elem_max_size) );

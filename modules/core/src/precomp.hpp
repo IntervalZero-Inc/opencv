@@ -354,7 +354,7 @@ struct CoreTLSData
 #endif
 };
 
-TLSData<CoreTLSData>& getCoreTlsData();
+CoreTLSData& getCoreTlsData();
 
 #if defined(BUILD_SHARED_LIBS)
 #if defined _WIN32 || defined WINCE
@@ -372,7 +372,12 @@ extern CV_EXPORTS
 bool __termination;  // skip some cleanups, because process is terminating
                      // (for example, if ExitProcess() was already called)
 
+CV_EXPORTS
 cv::Mutex& getInitializationMutex();
+
+/// @brief Returns timestamp in nanoseconds since program launch
+int64 getTimestampNS();
+
 
 // TODO Memory barriers?
 #define CV_SINGLETON_LAZY_INIT_(TYPE, INITIALIZER, RET_VALUE) \
@@ -387,6 +392,8 @@ cv::Mutex& getInitializationMutex();
 
 #define CV_SINGLETON_LAZY_INIT(TYPE, INITIALIZER) CV_SINGLETON_LAZY_INIT_(TYPE, INITIALIZER, instance)
 #define CV_SINGLETON_LAZY_INIT_REF(TYPE, INITIALIZER) CV_SINGLETON_LAZY_INIT_(TYPE, INITIALIZER, *instance)
+
+CV_EXPORTS void releaseTlsStorageThread();
 
 int cv_snprintf(char* buf, int len, const char* fmt, ...);
 int cv_vsnprintf(char* buf, int len, const char* fmt, va_list args);

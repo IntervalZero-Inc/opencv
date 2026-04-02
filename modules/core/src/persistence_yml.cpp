@@ -130,17 +130,11 @@ static char* icvYMLParseBase64(CvFileStorage* fs, char* ptr, int indent, CvFileN
         parser.flush();
     }
 
-    /* save as CvSeq */
-    int elem_size = ::icvCalcStructSize(dt.c_str(), 0);
-    if (total_byte_size % elem_size != 0)
-        CV_PARSE_ERROR("Byte size not match elememt size");
-    int elem_cnt = total_byte_size / elem_size;
-
     node->tag = CV_NODE_NONE;
     int struct_flags = CV_NODE_FLOW | CV_NODE_SEQ;
     /* after icvFSCreateCollection, node->tag == struct_flags */
     icvFSCreateCollection(fs, struct_flags, node);
-    base64::make_seq(binary_buffer.data(), elem_cnt, dt.c_str(), *node->data.seq);
+    base64::make_seq(fs, binary_buffer.data(), total_byte_size, dt.c_str(), *node->data.seq);
 
     if (fs->dummy_eof) {
         /* end of file */
@@ -207,20 +201,20 @@ icvYMLParseValue( CvFileStorage* fs, char* ptr, CvFileNode* node,
         if ( d == '<') //support of full type heading from YAML 1.2
         {
             const char* yamlTypeHeading = "<tag:yaml.org,2002:";
-            const size_t headingLenght = strlen(yamlTypeHeading);
+            const size_t headingLength = strlen(yamlTypeHeading);
 
             char* typeEndPtr = ++ptr;
 
             do d = *++typeEndPtr;
             while( cv_isprint(d) && d != ' ' && d != '>' );
 
-            if ( d == '>' && (size_t)(typeEndPtr - ptr) > headingLenght )
+            if ( d == '>' && (size_t)(typeEndPtr - ptr) > headingLength )
             {
-                if ( memcmp(ptr, yamlTypeHeading, headingLenght) == 0 )
+                if ( memcmp(ptr, yamlTypeHeading, headingLength) == 0 )
                 {
                     value_type |= CV_NODE_USER;
                     *typeEndPtr = ' ';
-                    ptr += headingLenght - 1;
+                    ptr += headingLength - 1;
                 }
             }
         }
@@ -803,7 +797,7 @@ void icvYMLEndWriteStruct( CvFileStorage* fs )
 
     if( !CV_NODE_IS_FLOW(parent_flags) )
         fs->struct_indent -= CV_YML_INDENT + CV_NODE_IS_FLOW(struct_flags);
-    assert( fs->struct_indent >= 0 );
+    CV_Assert( fs->struct_indent >= 0 );
 
     fs->struct_flags = parent_flags;
 }

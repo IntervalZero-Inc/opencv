@@ -403,7 +403,8 @@ protected:
 
 // Input should be a vector of n 2D points or a Nx2 matrix
 cv::Mat cv::findEssentialMat( InputArray _points1, InputArray _points2, InputArray _cameraMatrix,
-                              int method, double prob, double threshold, OutputArray _mask)
+                              int method, double prob, double threshold,
+                              int maxIters, OutputArray _mask)
 {
     CV_INSTRUMENT_REGION();
 
@@ -442,11 +443,27 @@ cv::Mat cv::findEssentialMat( InputArray _points1, InputArray _points2, InputArr
 
     Mat E;
     if( method == RANSAC )
-        createRANSACPointSetRegistrator(makePtr<EMEstimatorCallback>(), 5, threshold, prob)->run(points1, points2, E, _mask);
+        createRANSACPointSetRegistrator(makePtr<EMEstimatorCallback>(), 5, threshold, prob, maxIters)->run(points1, points2, E, _mask);
     else
-        createLMeDSPointSetRegistrator(makePtr<EMEstimatorCallback>(), 5, prob)->run(points1, points2, E, _mask);
+        createLMeDSPointSetRegistrator(makePtr<EMEstimatorCallback>(), 5, prob, maxIters)->run(points1, points2, E, _mask);
 
     return E;
+}
+
+cv::Mat cv::findEssentialMat( InputArray _points1, InputArray _points2, InputArray _cameraMatrix,
+                              int method, double prob, double threshold,
+                              OutputArray _mask)
+{
+    return cv::findEssentialMat(_points1, _points2, _cameraMatrix, method, prob, threshold, 1000, _mask);
+}
+
+cv::Mat cv::findEssentialMat( InputArray _points1, InputArray _points2, double focal, Point2d pp,
+                              int method, double prob, double threshold, int maxIters, OutputArray _mask)
+{
+    CV_INSTRUMENT_REGION();
+
+    Mat cameraMatrix = (Mat_<double>(3,3) << focal, 0, pp.x, 0, focal, pp.y, 0, 0, 1);
+    return cv::findEssentialMat(_points1, _points2, cameraMatrix, method, prob, threshold, maxIters, _mask);
 }
 
 cv::Mat cv::findEssentialMat( InputArray _points1, InputArray _points2, double focal, Point2d pp,
@@ -455,7 +472,7 @@ cv::Mat cv::findEssentialMat( InputArray _points1, InputArray _points2, double f
     CV_INSTRUMENT_REGION();
 
     Mat cameraMatrix = (Mat_<double>(3,3) << focal, 0, pp.x, 0, focal, pp.y, 0, 0, 1);
-    return cv::findEssentialMat(_points1, _points2, cameraMatrix, method, prob, threshold, _mask);
+    return cv::findEssentialMat(_points1, _points2, cameraMatrix, method, prob, threshold, 1000, _mask);
 }
 
 int cv::recoverPose( InputArray E, InputArray _points1, InputArray _points2,
@@ -503,10 +520,10 @@ int cv::recoverPose( InputArray E, InputArray _points1, InputArray _points2,
     P3(Range::all(), Range(0, 3)) = R1 * 1.0; P3.col(3) = -t * 1.0;
     P4(Range::all(), Range(0, 3)) = R2 * 1.0; P4.col(3) = -t * 1.0;
 
-    // Do the cheirality check.
+    // Do the chirality check.
     // Notice here a threshold dist is used to filter
     // out far away points (i.e. infinite points) since
-    // their depth may vary between positive and negtive.
+    // their depth may vary between positive and negative.
     std::vector<Mat> allTriangulations(4);
     Mat Q;
 
@@ -571,7 +588,8 @@ int cv::recoverPose( InputArray E, InputArray _points1, InputArray _points2,
     if (!_mask.empty())
     {
         Mat mask = _mask.getMat();
-        CV_Assert(mask.size() == mask1.size());
+        CV_Assert(npoints == mask.checkVector(1));
+        mask = mask.reshape(1, npoints);
         bitwise_and(mask, mask1, mask1);
         bitwise_and(mask, mask2, mask2);
         bitwise_and(mask, mask3, mask3);

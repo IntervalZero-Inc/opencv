@@ -37,7 +37,7 @@ icvXMLSkipSpaces( CvFileStorage* fs, char* ptr, int mode )
 
             if( c == '-' )
             {
-                assert( ptr[1] == '-' && ptr[2] == '>' );
+                CV_Assert( ptr[1] == '-' && ptr[2] == '>' );
                 mode = 0;
                 ptr += 3;
             }
@@ -167,17 +167,11 @@ static char* icvXMLParseBase64(CvFileStorage* fs, char* ptr, CvFileNode * node)
         parser.flush();
     }
 
-    /* save as CvSeq */
-    int elem_size = ::icvCalcStructSize(dt.c_str(), 0);
-    if (total_byte_size % elem_size != 0)
-        CV_PARSE_ERROR("data size not matches elememt size");
-    int elem_cnt = total_byte_size / elem_size;
-
     node->tag = CV_NODE_NONE;
     int struct_flags = CV_NODE_SEQ;
     /* after icvFSCreateCollection, node->tag == struct_flags */
     icvFSCreateCollection(fs, struct_flags, node);
-    base64::make_seq(binary_buffer.data(), elem_cnt, dt.c_str(), *node->data.seq);
+    base64::make_seq(fs, binary_buffer.data(), total_byte_size, dt.c_str(), *node->data.seq);
 
     if (fs->dummy_eof) {
         /* end of file */
@@ -490,7 +484,7 @@ icvXMLParseTag( CvFileStorage* fs, char* ptr, CvStringHashNode** _tag,
     else if( *ptr == '!' )
     {
         tag_type = CV_XML_DIRECTIVE_TAG;
-        assert( ptr[1] != '-' || ptr[2] != '-' );
+        CV_Assert( ptr[1] != '-' || ptr[2] != '-' );
         ptr++;
     }
     else
@@ -555,7 +549,7 @@ icvXMLParseTag( CvFileStorage* fs, char* ptr, CvStringHashNode** _tag,
             }
 
             ptr = icvXMLParseValue( fs, ptr, &stub, CV_NODE_STRING );
-            assert( stub.tag == CV_NODE_STRING );
+            CV_Assert( stub.tag == CV_NODE_STRING );
             last->attr[count*2+1] = stub.data.str.ptr;
             count++;
         }
@@ -859,7 +853,7 @@ void icvXMLWriteScalar( CvFileStorage* fs, const char* key, const char* data, in
         char* ptr = fs->buffer;
         int new_offset = (int)(ptr - fs->buffer_start) + len;
 
-        if( key )
+        if( key && key[0] != '\0' )
             CV_Error( CV_StsBadArg, "elements with keys can not be written to sequence" );
 
         fs->struct_flags = CV_NODE_SEQ;

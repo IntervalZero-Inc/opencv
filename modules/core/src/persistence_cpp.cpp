@@ -11,21 +11,6 @@
 namespace cv
 {
 
-static void getElemSize( const String& fmt, size_t& elemSize, size_t& cn )
-{
-    const char* dt = fmt.c_str();
-    cn = 1;
-    if( cv_isdigit(dt[0]) )
-    {
-        cn = dt[0] - '0';
-        dt++;
-    }
-    char c = dt[0];
-    elemSize = cn*(c == 'u' || c == 'c' ? sizeof(uchar) : c == 'w' || c == 's' ? sizeof(ushort) :
-        c == 'i' ? sizeof(int) : c == 'f' ? sizeof(float) : c == 'd' ? sizeof(double) :
-        c == 'r' ? sizeof(void*) : (size_t)0);
-}
-
 FileStorage::FileStorage()
 {
     state = UNDEFINED;
@@ -164,8 +149,8 @@ void FileStorage::writeRaw( const String& fmt, const uchar* vec, size_t len )
 {
     if( !isOpened() )
         return;
-    size_t elemSize, cn;
-    getElemSize( fmt, elemSize, cn );
+    CV_Assert(!fmt.empty());
+    size_t elemSize = ::icvCalcStructSize(fmt.c_str(), 0);
     CV_Assert( len % elemSize == 0 );
     cvWriteRawData( fs, vec, (int)(len/elemSize), fmt.c_str());
 }
@@ -181,27 +166,49 @@ void FileStorage::writeObj( const String& name, const void* obj )
 
 void FileStorage::write( const String& name, int val )
 {
-    *this << name << val;
+    cvWriteInt(fs, name.c_str(), val);
 }
 
 void FileStorage::write( const String& name, double val )
 {
-    *this << name << val;
+    cvWriteReal(fs, name.c_str(), val);
 }
 
 void FileStorage::write( const String& name, const String& val )
 {
-    *this << name << val;
+    cvWriteString(fs, name.c_str(), val.c_str());
 }
 
 void FileStorage::write( const String& name, InputArray val )
 {
-    *this << name << val.getMat();
+    if(state & INSIDE_MAP)
+        *this << name;
+    *this << val.getMat();
 }
 
 void FileStorage::writeComment( const String& comment, bool append )
 {
     cvWriteComment(fs, comment.c_str(), append ? 1 : 0);
+}
+
+void FileStorage::startWriteStruct(const String& name, int flags, const String& typeName)
+{
+    int struct_type = flags & FileNode::TYPE_MASK;
+    bool isflow = (flags & FileNode::FLOW) != 0;
+    CV_Assert(struct_type == FileNode::SEQ || struct_type == FileNode::MAP);
+    char strbegin_[] = { (struct_type == FileNode::SEQ ? '[' : '{'), (isflow ? ':' : '\0'), '\0' };
+    String strbegin = strbegin_;
+    if (!typeName.empty())
+        strbegin += typeName;
+    *this << name << strbegin;
+}
+
+void FileStorage::endWriteStruct()
+{
+    if( structs.empty() )
+        CV_Error( CV_StsError, "Extra endWriteStruct()" );
+    char openparen = structs.back();
+    *this << (openparen == '[' ? "]" : "}");
 }
 
 String FileStorage::getDefaultObjectName(const String& _filename)
@@ -343,6 +350,15 @@ FileNodeIterator::FileNodeIterator(const FileNodeIterator& it)
     remaining = it.remaining;
 }
 
+FileNodeIterator& FileNodeIterator::operator=(const FileNodeIterator& it)
+{
+    fs = it.fs;
+    container = it.container;
+    reader = it.reader;
+    remaining = it.remaining;
+    return *this;
+}
+
 FileNodeIterator& FileNodeIterator::operator ++()
 {
     if( remaining > 0 )
@@ -412,19 +428,30 @@ FileNodeIterator& FileNodeIterator::operator -= (int ofs)
 }
 
 
-FileNodeIterator& FileNodeIterator::readRaw( const String& fmt, uchar* vec, size_t maxCount )
+FileNodeIterator& FileNodeIterator::readRaw(const String& fmt, uchar* vec, size_t len)
 {
-    if( fs && container && remaining > 0 )
+    CV_Assert(!fmt.empty());
+    if( fs && container && remaining > 0 && len > 0)
     {
-        size_t elem_size, cn;
-        getElemSize( fmt, elem_size, cn );
-        CV_Assert( elem_size > 0 );
-        size_t count = std::min(remaining, maxCount);
-
-        if( reader.seq )
+        if (reader.seq)
         {
-            cvReadRawDataSlice( fs, (CvSeqReader*)&reader, (int)count, vec, fmt.c_str() );
-            remaining -= count*cn;
+            size_t step = ::icvCalcStructSize(fmt.c_str(), 0);
+            if (len % step && len != (size_t)INT_MAX)  // TODO remove compatibility hack
+            {
+                CV_PARSE_ERROR("readRaw: total byte size not match elememt size");
+            }
+            size_t maxCount = len / step;
+            int fmt_pairs[CV_FS_MAX_FMT_PAIRS*2] = {};
+            int fmt_pair_count = icvDecodeFormat(fmt.c_str(), fmt_pairs, CV_FS_MAX_FMT_PAIRS);
+            int vecElems = 0;
+            for (int k = 0; k < fmt_pair_count; k++)
+            {
+                vecElems += fmt_pairs[k*2];
+            }
+            CV_Assert(vecElems > 0);
+            size_t count = std::min((size_t)remaining, (size_t)maxCount * vecElems);
+            cvReadRawDataSlice(fs, (CvSeqReader*)&reader, (int)count, vec, fmt.c_str());
+            remaining -= count;
         }
         else
         {

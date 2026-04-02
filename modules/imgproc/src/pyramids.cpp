@@ -82,18 +82,20 @@ template<typename T1, typename T2> int PyrDownVecV(T1**, T2*, int) { return 0; }
 
 template<typename T1, typename T2> int PyrUpVecV(T1**, T2**, int) { return 0; }
 
+template<typename T1, typename T2> int PyrUpVecVOneRow(T1**, T2*, int) { return 0; }
+
 #if CV_SIMD
 
 template<> int PyrDownVecH<uchar, int, 1>(const uchar* src, int* row, int width)
 {
     int x = 0;
-    const uchar *src0 = src, *src2 = src + 2, *src4 = src + 3;
+    const uchar *src01 = src, *src23 = src + 2, *src4 = src + 3;
 
     v_int16 v_1_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040001));
     v_int16 v_6_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040006));
-    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src0 += v_int16::nlanes, src2 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
-        v_store(row, v_dotprod(v_reinterpret_as_s16(vx_load_expand(src0)), v_1_4) +
-                     v_dotprod(v_reinterpret_as_s16(vx_load_expand(src2)), v_6_4) +
+    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src01 += v_int16::nlanes, src23 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
+        v_store(row, v_dotprod(v_reinterpret_as_s16(vx_load_expand(src01)), v_1_4) +
+                     v_dotprod(v_reinterpret_as_s16(vx_load_expand(src23)), v_6_4) +
                      (v_reinterpret_as_s32(vx_load_expand(src4)) >> 16));
     vx_cleanup();
 
@@ -102,13 +104,13 @@ template<> int PyrDownVecH<uchar, int, 1>(const uchar* src, int* row, int width)
 template<> int PyrDownVecH<uchar, int, 2>(const uchar* src, int* row, int width)
 {
     int x = 0;
-    const uchar *src0 = src, *src2 = src + 4, *src4 = src + 6;
+    const uchar *src01 = src, *src23 = src + 4, *src4 = src + 6;
 
     v_int16 v_1_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040001));
     v_int16 v_6_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040006));
-    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src0 += v_int16::nlanes, src2 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
-        v_store(row, v_dotprod(v_interleave_pairs(v_reinterpret_as_s16(vx_load_expand(src0))), v_1_4) +
-                     v_dotprod(v_interleave_pairs(v_reinterpret_as_s16(vx_load_expand(src2))), v_6_4) +
+    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src01 += v_int16::nlanes, src23 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
+        v_store(row, v_dotprod(v_interleave_pairs(v_reinterpret_as_s16(vx_load_expand(src01))), v_1_4) +
+                     v_dotprod(v_interleave_pairs(v_reinterpret_as_s16(vx_load_expand(src23))), v_6_4) +
                      (v_reinterpret_as_s32(v_interleave_pairs(vx_load_expand(src4))) >> 16));
     vx_cleanup();
 
@@ -150,13 +152,13 @@ template<> int PyrDownVecH<uchar, int, 3>(const uchar* src, int* row, int width)
 template<> int PyrDownVecH<uchar, int, 4>(const uchar* src, int* row, int width)
 {
     int x = 0;
-    const uchar *src0 = src, *src2 = src + 8, *src4 = src + 12;
+    const uchar *src01 = src, *src23 = src + 8, *src4 = src + 12;
 
     v_int16 v_1_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040001));
     v_int16 v_6_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040006));
-    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src0 += v_int16::nlanes, src2 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
-        v_store(row, v_dotprod(v_interleave_quads(v_reinterpret_as_s16(vx_load_expand(src0))), v_1_4) +
-                     v_dotprod(v_interleave_quads(v_reinterpret_as_s16(vx_load_expand(src2))), v_6_4) +
+    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src01 += v_int16::nlanes, src23 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
+        v_store(row, v_dotprod(v_interleave_quads(v_reinterpret_as_s16(vx_load_expand(src01))), v_1_4) +
+                     v_dotprod(v_interleave_quads(v_reinterpret_as_s16(vx_load_expand(src23))), v_6_4) +
                      (v_reinterpret_as_s32(v_interleave_quads(vx_load_expand(src4))) >> 16));
     vx_cleanup();
 
@@ -166,13 +168,13 @@ template<> int PyrDownVecH<uchar, int, 4>(const uchar* src, int* row, int width)
 template<> int PyrDownVecH<short, int, 1>(const short* src, int* row, int width)
 {
     int x = 0;
-    const short *src0 = src, *src2 = src + 2, *src4 = src + 3;
+    const short *src01 = src, *src23 = src + 2, *src4 = src + 3;
 
     v_int16 v_1_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040001));
     v_int16 v_6_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040006));
-    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src0 += v_int16::nlanes, src2 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
-        v_store(row, v_dotprod(vx_load(src0), v_1_4) +
-                     v_dotprod(vx_load(src2), v_6_4) +
+    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src01 += v_int16::nlanes, src23 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
+        v_store(row, v_dotprod(vx_load(src01), v_1_4) +
+                     v_dotprod(vx_load(src23), v_6_4) +
                      (v_reinterpret_as_s32(vx_load(src4)) >> 16));
     vx_cleanup();
 
@@ -181,13 +183,13 @@ template<> int PyrDownVecH<short, int, 1>(const short* src, int* row, int width)
 template<> int PyrDownVecH<short, int, 2>(const short* src, int* row, int width)
 {
     int x = 0;
-    const short *src0 = src, *src2 = src + 4, *src4 = src + 6;
+    const short *src01 = src, *src23 = src + 4, *src4 = src + 6;
 
     v_int16 v_1_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040001));
     v_int16 v_6_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040006));
-    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src0 += v_int16::nlanes, src2 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
-        v_store(row, v_dotprod(v_interleave_pairs(vx_load(src0)), v_1_4) +
-                     v_dotprod(v_interleave_pairs(vx_load(src2)), v_6_4) +
+    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src01 += v_int16::nlanes, src23 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
+        v_store(row, v_dotprod(v_interleave_pairs(vx_load(src01)), v_1_4) +
+                     v_dotprod(v_interleave_pairs(vx_load(src23)), v_6_4) +
                      (v_reinterpret_as_s32(v_interleave_pairs(vx_load(src4))) >> 16));
     vx_cleanup();
 
@@ -247,15 +249,15 @@ template<> int PyrDownVecH<short, int, 4>(const short* src, int* row, int width)
 template<> int PyrDownVecH<ushort, int, 1>(const ushort* src, int* row, int width)
 {
     int x = 0;
-    const ushort *src0 = src, *src2 = src + 2, *src4 = src + 3;
+    const ushort *src01 = src, *src23 = src + 2, *src4 = src + 3;
 
     v_int16 v_1_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040001));
     v_int16 v_6_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040006));
     v_uint16 v_half = vx_setall_u16(0x8000);
     v_int32 v_half15 = vx_setall_s32(0x00078000);
-    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src0 += v_int16::nlanes, src2 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
-        v_store(row, v_dotprod(v_reinterpret_as_s16(v_sub_wrap(vx_load(src0), v_half)), v_1_4) +
-                     v_dotprod(v_reinterpret_as_s16(v_sub_wrap(vx_load(src2), v_half)), v_6_4) +
+    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src01 += v_int16::nlanes, src23 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
+        v_store(row, v_dotprod(v_reinterpret_as_s16(v_sub_wrap(vx_load(src01), v_half)), v_1_4) +
+                     v_dotprod(v_reinterpret_as_s16(v_sub_wrap(vx_load(src23), v_half)), v_6_4) +
                      v_reinterpret_as_s32(v_reinterpret_as_u32(vx_load(src4)) >> 16) + v_half15);
     vx_cleanup();
 
@@ -264,15 +266,15 @@ template<> int PyrDownVecH<ushort, int, 1>(const ushort* src, int* row, int widt
 template<> int PyrDownVecH<ushort, int, 2>(const ushort* src, int* row, int width)
 {
     int x = 0;
-    const ushort *src0 = src, *src2 = src + 4, *src4 = src + 6;
+    const ushort *src01 = src, *src23 = src + 4, *src4 = src + 6;
 
     v_int16 v_1_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040001));
     v_int16 v_6_4 = v_reinterpret_as_s16(vx_setall_u32(0x00040006));
     v_uint16 v_half = vx_setall_u16(0x8000);
     v_int32 v_half15 = vx_setall_s32(0x00078000);
-    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src0 += v_int16::nlanes, src2 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
-        v_store(row, v_dotprod(v_interleave_pairs(v_reinterpret_as_s16(v_sub_wrap(vx_load(src0), v_half))), v_1_4) +
-                     v_dotprod(v_interleave_pairs(v_reinterpret_as_s16(v_sub_wrap(vx_load(src2), v_half))), v_6_4) +
+    for (; x <= width - v_int32::nlanes; x += v_int32::nlanes, src01 += v_int16::nlanes, src23 += v_int16::nlanes, src4 += v_int16::nlanes, row += v_int32::nlanes)
+        v_store(row, v_dotprod(v_interleave_pairs(v_reinterpret_as_s16(v_sub_wrap(vx_load(src01), v_half))), v_1_4) +
+                     v_dotprod(v_interleave_pairs(v_reinterpret_as_s16(v_sub_wrap(vx_load(src23), v_half))), v_6_4) +
                      v_reinterpret_as_s32(v_reinterpret_as_u32(v_interleave_pairs(vx_load(src4))) >> 16) + v_half15);
     vx_cleanup();
 
@@ -344,15 +346,15 @@ template<> int PyrDownVecH<ushort, int, 4>(const ushort* src, int* row, int widt
 template<> int PyrDownVecH<float, float, 1>(const float* src, float* row, int width)
 {
     int x = 0;
-    const float *src0 = src, *src2 = src + 2, *src4 = src + 4;
+    const float *src01 = src, *src23 = src + 2, *src4 = src + 3;
 
     v_float32 _4 = vx_setall_f32(4.f), _6 = vx_setall_f32(6.f);
-    for (; x <= width - v_float32::nlanes; x += v_float32::nlanes, src0 += 2*v_float32::nlanes, src2 += 2*v_float32::nlanes, src4 += 2*v_float32::nlanes, row+=v_float32::nlanes)
+    for (; x <= width - v_float32::nlanes; x += v_float32::nlanes, src01 += 2*v_float32::nlanes, src23 += 2*v_float32::nlanes, src4 += 2*v_float32::nlanes, row+=v_float32::nlanes)
     {
         v_float32 r0, r1, r2, r3, r4, rtmp;
-        v_load_deinterleave(src0, r0, r1);
-        v_load_deinterleave(src2, r2, r3);
-        v_load_deinterleave(src4, r4, rtmp);
+        v_load_deinterleave(src01, r0, r1);
+        v_load_deinterleave(src23, r2, r3);
+        v_load_deinterleave(src4, rtmp, r4);
         v_store(row, v_muladd(r2, _6, v_muladd(r1 + r3, _4, r0 + r4)));
     }
     vx_cleanup();
@@ -362,14 +364,14 @@ template<> int PyrDownVecH<float, float, 1>(const float* src, float* row, int wi
 template<> int PyrDownVecH<float, float, 2>(const float* src, float* row, int width)
 {
     int x = 0;
-    const float *src0 = src, *src2 = src + 4, *src4 = src + 6;
+    const float *src01 = src, *src23 = src + 4, *src4 = src + 6;
 
     v_float32 _4 = vx_setall_f32(4.f), _6 = vx_setall_f32(6.f);
-    for (; x <= width - 2*v_float32::nlanes; x += 2*v_float32::nlanes, src0 += 4*v_float32::nlanes, src2 += 4*v_float32::nlanes, src4 += 4*v_float32::nlanes, row += 2*v_float32::nlanes)
+    for (; x <= width - 2*v_float32::nlanes; x += 2*v_float32::nlanes, src01 += 4*v_float32::nlanes, src23 += 4*v_float32::nlanes, src4 += 4*v_float32::nlanes, row += 2*v_float32::nlanes)
     {
         v_float32 r0a, r0b, r1a, r1b, r2a, r2b, r3a, r3b, r4a, r4b, rtmpa, rtmpb;
-        v_load_deinterleave(src0, r0a, r0b, r1a, r1b);
-        v_load_deinterleave(src2, r2a, r2b, r3a, r3b);
+        v_load_deinterleave(src01, r0a, r0b, r1a, r1b);
+        v_load_deinterleave(src23, r2a, r2b, r3a, r3b);
         v_load_deinterleave(src4, rtmpa, rtmpb, r4a, r4b);
         v_store_interleave(row, v_muladd(r2a, _6, v_muladd(r1a + r3a, _4, r0a + r4a)), v_muladd(r2b, _6, v_muladd(r1b + r3b, _4, r0b + r4b)));
     }
@@ -430,15 +432,15 @@ template<> int PyrDownVecH<float, float, 4>(const float* src, float* row, int wi
 template<> int PyrDownVecH<double, double, 1>(const double* src, double* row, int width)
 {
     int x = 0;
-    const double *src0 = src, *src2 = src + 2, *src4 = src + 4;
+    const double *src01 = src, *src23 = src + 2, *src4 = src + 3;
 
     v_float64 _4 = vx_setall_f64(4.f), _6 = vx_setall_f64(6.f);
-    for (; x <= width - v_float64::nlanes; x += v_float64::nlanes, src0 += 2*v_float64::nlanes, src2 += 2*v_float64::nlanes, src4 += 2*v_float64::nlanes, row += v_float64::nlanes)
+    for (; x <= width - v_float64::nlanes; x += v_float64::nlanes, src01 += 2*v_float64::nlanes, src23 += 2*v_float64::nlanes, src4 += 2*v_float64::nlanes, row += v_float64::nlanes)
     {
         v_float64 r0, r1, r2, r3, r4, rtmp;
-        v_load_deinterleave(src0, r0, r1);
-        v_load_deinterleave(src2, r2, r3);
-        v_load_deinterleave(src4, r4, rtmp);
+        v_load_deinterleave(src01, r0, r1);
+        v_load_deinterleave(src23, r2, r3);
+        v_load_deinterleave(src4, rtmp, r4);
         v_store(row, v_muladd(r2, _6, v_muladd(r1 + r3, _4, r0 + r4)));
     }
     vx_cleanup();
@@ -717,70 +719,222 @@ template <> int PyrUpVecV<float, float>(float** src, float** dst, int width)
     return x;
 }
 
+template <> int PyrUpVecVOneRow<int, uchar>(int** src, uchar* dst, int width)
+{
+    int x = 0;
+    const int *row0 = src[0], *row1 = src[1], *row2 = src[2];
+
+    for( ; x <= width - v_uint8::nlanes; x += v_uint8::nlanes)
+    {
+        v_int16 v_r00 = v_pack(vx_load(row0 + x), vx_load(row0 + x + v_int32::nlanes)),
+                v_r01 = v_pack(vx_load(row0 + x + 2 * v_int32::nlanes), vx_load(row0 + x + 3 * v_int32::nlanes)),
+                v_r10 = v_pack(vx_load(row1 + x), vx_load(row1 + x + v_int32::nlanes)),
+                v_r11 = v_pack(vx_load(row1 + x + 2 * v_int32::nlanes), vx_load(row1 + x + 3 * v_int32::nlanes)),
+                v_r20 = v_pack(vx_load(row2 + x), vx_load(row2 + x + v_int32::nlanes)),
+                v_r21 = v_pack(vx_load(row2 + x + 2 * v_int32::nlanes), vx_load(row2 + x + 3 * v_int32::nlanes));
+        v_int16 v_2r10 = v_r10 + v_r10, v_2r11 = (v_r11 + v_r11);
+        v_store(dst + x, v_rshr_pack_u<6>(v_r00 + v_r20 + (v_2r10 + v_2r10 + v_2r10), v_r01 + v_r21 + (v_2r11 + v_2r11 + v_2r11)));
+    }
+    if(x <= width - v_uint16::nlanes)
+    {
+        v_int16 v_r00 = v_pack(vx_load(row0 + x), vx_load(row0 + x + v_int32::nlanes)),
+                v_r10 = v_pack(vx_load(row1 + x), vx_load(row1 + x + v_int32::nlanes)),
+                v_r20 = v_pack(vx_load(row2 + x), vx_load(row2 + x + v_int32::nlanes));
+        v_int16 v_2r10 = v_r10 + v_r10;
+        v_rshr_pack_u_store<6>(dst + x, v_r00 + v_r20 + (v_2r10 + v_2r10 + v_2r10));
+        x += v_uint16::nlanes;
+    }
+    typedef int CV_DECL_ALIGNED(1) unaligned_int;
+    for (; x <= width - v_int32x4::nlanes; x += v_int32x4::nlanes)
+    {
+        v_int32 v_r00 = vx_load(row0 + x),
+                v_r10 = vx_load(row1 + x),
+                v_r20 = vx_load(row2 + x);
+        v_int32 v_2r10 = v_r10 + v_r10;
+        v_int16 d = v_pack(v_r00 + v_r20 + (v_2r10 + v_2r10 + v_2r10), (v_r10 + v_r20) << 2);
+        *(unaligned_int*)(dst + x) = v_reinterpret_as_s32(v_rshr_pack_u<6>(d, vx_setzero_s16())).get0();
+    }
+    vx_cleanup();
+
+    return x;
+}
+
+template <> int PyrUpVecVOneRow<int, short>(int** src, short* dst, int width)
+{
+    int x = 0;
+    const int *row0 = src[0], *row1 = src[1], *row2 = src[2];
+
+    for( ; x <= width - v_int16::nlanes; x += v_int16::nlanes)
+    {
+        v_int32 v_r00 = vx_load(row0 + x),
+                v_r01 = vx_load(row0 + x + v_int32::nlanes),
+                v_r10 = vx_load(row1 + x),
+                v_r11 = vx_load(row1 + x + v_int32::nlanes),
+                v_r20 = vx_load(row2 + x),
+                v_r21 = vx_load(row2 + x + v_int32::nlanes);
+        v_store(dst + x, v_rshr_pack<6>(v_r00 + v_r20 + ((v_r10 << 1) + (v_r10 << 2)), v_r01 + v_r21 + ((v_r11 << 1) + (v_r11 << 2))));
+    }
+    if(x <= width - v_int32::nlanes)
+    {
+        v_int32 v_r00 = vx_load(row0 + x),
+                v_r10 = vx_load(row1 + x),
+                v_r20 = vx_load(row2 + x);
+        v_rshr_pack_store<6>(dst + x, v_r00 + v_r20 + ((v_r10 << 1) + (v_r10 << 2)));
+        x += v_int32::nlanes;
+    }
+    vx_cleanup();
+
+    return x;
+}
+
+template <> int PyrUpVecVOneRow<int, ushort>(int** src, ushort* dst, int width)
+{
+    int x = 0;
+    const int *row0 = src[0], *row1 = src[1], *row2 = src[2];
+
+    for( ; x <= width - v_uint16::nlanes; x += v_uint16::nlanes)
+    {
+        v_int32 v_r00 = vx_load(row0 + x),
+                v_r01 = vx_load(row0 + x + v_int32::nlanes),
+                v_r10 = vx_load(row1 + x),
+                v_r11 = vx_load(row1 + x + v_int32::nlanes),
+                v_r20 = vx_load(row2 + x),
+                v_r21 = vx_load(row2 + x + v_int32::nlanes);
+        v_store(dst + x, v_rshr_pack_u<6>(v_r00 + v_r20 + ((v_r10 << 1) + (v_r10 << 2)), v_r01 + v_r21 + ((v_r11 << 1) + (v_r11 << 2))));
+    }
+    if(x <= width - v_int32::nlanes)
+    {
+        v_int32 v_r00 = vx_load(row0 + x),
+                v_r10 = vx_load(row1 + x),
+                v_r20 = vx_load(row2 + x);
+        v_rshr_pack_u_store<6>(dst + x, v_r00 + v_r20 + ((v_r10 << 1) + (v_r10 << 2)));
+        x += v_int32::nlanes;
+    }
+    vx_cleanup();
+
+    return x;
+}
+
+template <> int PyrUpVecVOneRow<float, float>(float** src, float* dst, int width)
+{
+    int x = 0;
+    const float *row0 = src[0], *row1 = src[1], *row2 = src[2];
+
+    v_float32 v_6 = vx_setall_f32(6.0f), v_scale = vx_setall_f32(1.f/64.f);
+    for( ; x <= width - v_float32::nlanes; x += v_float32::nlanes)
+    {
+        v_float32 v_r0 = vx_load(row0 + x),
+                  v_r1 = vx_load(row1 + x),
+                  v_r2 = vx_load(row2 + x);
+        v_store(dst + x, v_scale * (v_muladd(v_6, v_r1, v_r0) + v_r2));
+    }
+    vx_cleanup();
+
+    return x;
+}
+
 #endif
+
+template<class CastOp>
+struct PyrDownInvoker : ParallelLoopBody
+{
+    PyrDownInvoker(const Mat& src, const Mat& dst, int borderType, int **tabR, int **tabM, int **tabL)
+    {
+        _src = &src;
+        _dst = &dst;
+        _borderType = borderType;
+        _tabR = tabR;
+        _tabM = tabM;
+        _tabL = tabL;
+    }
+
+    void operator()(const Range& range) const CV_OVERRIDE;
+
+    int **_tabR;
+    int **_tabM;
+    int **_tabL;
+    const Mat *_src;
+    const Mat *_dst;
+    int _borderType;
+};
 
 template<class CastOp> void
 pyrDown_( const Mat& _src, Mat& _dst, int borderType )
 {
     const int PD_SZ = 5;
-    typedef typename CastOp::type1 WT;
-    typedef typename CastOp::rtype T;
-
     CV_Assert( !_src.empty() );
     Size ssize = _src.size(), dsize = _dst.size();
     int cn = _src.channels();
-    int bufstep = (int)alignSize(dsize.width*cn, 16);
-    AutoBuffer<WT> _buf(bufstep*PD_SZ + 16);
-    WT* buf = alignPtr((WT*)_buf.data(), 16);
-    int tabL[CV_CN_MAX*(PD_SZ+2)], tabR[CV_CN_MAX*(PD_SZ+2)];
-    AutoBuffer<int> _tabM(dsize.width*cn);
-    int* tabM = _tabM.data();
-    WT* rows[PD_SZ];
-    CastOp castOp;
+
+    AutoBuffer<int> _tabM(dsize.width * cn), _tabL(cn * (PD_SZ + 2)),
+        _tabR(cn * (PD_SZ + 2));
+    int *tabM = _tabM.data(), *tabL = _tabL.data(), *tabR = _tabR.data();
 
     CV_Assert( ssize.width > 0 && ssize.height > 0 &&
                std::abs(dsize.width*2 - ssize.width) <= 2 &&
                std::abs(dsize.height*2 - ssize.height) <= 2 );
-    int k, x, sy0 = -PD_SZ/2, sy = sy0, width0 = std::min((ssize.width-PD_SZ/2-1)/2 + 1, dsize.width);
+    int width0 = std::min((ssize.width-PD_SZ/2-1)/2 + 1, dsize.width);
 
-    for( x = 0; x <= PD_SZ+1; x++ )
+    for (int x = 0; x <= PD_SZ+1; x++)
     {
         int sx0 = borderInterpolate(x - PD_SZ/2, ssize.width, borderType)*cn;
         int sx1 = borderInterpolate(x + width0*2 - PD_SZ/2, ssize.width, borderType)*cn;
-        for( k = 0; k < cn; k++ )
+        for (int k = 0; k < cn; k++)
         {
             tabL[x*cn + k] = sx0 + k;
             tabR[x*cn + k] = sx1 + k;
         }
     }
 
+    for (int x = 0; x < dsize.width*cn; x++)
+        tabM[x] = (x/cn)*2*cn + x % cn;
+
+    int *tabLPtr = tabL;
+    int *tabRPtr = tabR;
+
+    cv::parallel_for_(Range(0,dsize.height), cv::PyrDownInvoker<CastOp>(_src, _dst, borderType, &tabRPtr, &tabM, &tabLPtr), cv::getNumThreads());
+}
+
+template<class CastOp>
+void PyrDownInvoker<CastOp>::operator()(const Range& range) const
+{
+    const int PD_SZ = 5;
+    typedef typename CastOp::type1 WT;
+    typedef typename CastOp::rtype T;
+    Size ssize = _src->size(), dsize = _dst->size();
+    int cn = _src->channels();
+    int bufstep = (int)alignSize(dsize.width*cn, 16);
+    AutoBuffer<WT> _buf(bufstep*PD_SZ + 16);
+    WT* buf = alignPtr((WT*)_buf.data(), 16);
+    WT* rows[PD_SZ];
+    CastOp castOp;
+
+    int sy0 = -PD_SZ/2, sy = range.start * 2 + sy0, width0 = std::min((ssize.width-PD_SZ/2-1)/2 + 1, dsize.width);
+
     ssize.width *= cn;
     dsize.width *= cn;
     width0 *= cn;
 
-    for( x = 0; x < dsize.width; x++ )
-        tabM[x] = (x/cn)*2*cn + x % cn;
-
-    for( int y = 0; y < dsize.height; y++ )
+    for (int y = range.start; y < range.end; y++)
     {
-        T* dst = _dst.ptr<T>(y);
+        T* dst = (T*)_dst->ptr<T>(y);
         WT *row0, *row1, *row2, *row3, *row4;
 
         // fill the ring buffer (horizontal convolution and decimation)
-        for( ; sy <= y*2 + 2; sy++ )
+        int sy_limit = y*2 + 2;
+        for( ; sy <= sy_limit; sy++ )
         {
             WT* row = buf + ((sy - sy0) % PD_SZ)*bufstep;
-            int _sy = borderInterpolate(sy, ssize.height, borderType);
-            const T* src = _src.ptr<T>(_sy);
-            int limit = cn;
-            const int* tab = tabL;
+            int _sy = borderInterpolate(sy, ssize.height, _borderType);
+            const T* src = _src->ptr<T>(_sy);
 
-            for( x = 0;;)
-            {
-                for( ; x < limit; x++ )
+            do {
+                int x = 0;
+                const int* tabL = *_tabL;
+                for( ; x < cn; x++ )
                 {
-                    row[x] = src[tab[x+cn*2]]*6 + (src[tab[x+cn]] + src[tab[x+cn*3]])*4 +
-                        src[tab[x]] + src[tab[x+cn*4]];
+                    row[x] = src[tabL[x+cn*2]]*6 + (src[tabL[x+cn]] + src[tabL[x+cn*3]])*4 +
+                        src[tabL[x]] + src[tabL[x+cn*4]];
                 }
 
                 if( x == dsize.width )
@@ -834,24 +988,29 @@ pyrDown_( const Mat& _src, Mat& _dst, int borderType )
                 {
                     for( ; x < width0; x++ )
                     {
-                        int sx = tabM[x];
+                        int sx = (*_tabM)[x];
                         row[x] = src[sx]*6 + (src[sx - cn] + src[sx + cn])*4 +
                             src[sx - cn*2] + src[sx + cn*2];
                     }
                 }
 
-                limit = dsize.width;
-                tab = tabR - x;
-            }
+                // tabR
+                const int* tabR = *_tabR;
+                for (int x_ = 0; x < dsize.width; x++, x_++)
+                {
+                    row[x] = src[tabR[x_+cn*2]]*6 + (src[tabR[x_+cn]] + src[tabR[x_+cn*3]])*4 +
+                        src[tabR[x_]] + src[tabR[x_+cn*4]];
+                }
+            } while (0);
         }
 
         // do vertical convolution and decimation and write the result to the destination image
-        for( k = 0; k < PD_SZ; k++ )
+        for (int k = 0; k < PD_SZ; k++)
             rows[k] = buf + ((y*2 - PD_SZ/2 + k - sy0) % PD_SZ)*bufstep;
         row0 = rows[0]; row1 = rows[1]; row2 = rows[2]; row3 = rows[3]; row4 = rows[4];
 
-        x = PyrDownVecV<WT, T>(rows, dst, dsize.width);
-        for( ; x < dsize.width; x++ )
+        int x = PyrDownVecV<WT, T>(rows, dst, dsize.width);
+        for (; x < dsize.width; x++ )
             dst[x] = castOp(row2[x]*6 + (row1[x] + row3[x])*4 + row0[x] + row4[x]);
     }
 }
@@ -920,7 +1079,7 @@ pyrUp_( const Mat& _src, Mat& _dst, int)
 
                 if (dsize.width > ssize.width*2)
                 {
-                    row[(_dst.cols-1) + x] = row[dx + cn];
+                    row[(_dst.cols-1) * cn + x] = row[dx + cn];
                 }
             }
 
@@ -940,13 +1099,26 @@ pyrUp_( const Mat& _src, Mat& _dst, int)
         row0 = rows[0]; row1 = rows[1]; row2 = rows[2];
         dsts[0] = dst0; dsts[1] = dst1;
 
-        x = PyrUpVecV<WT, T>(rows, dsts, dsize.width);
-        for( ; x < dsize.width; x++ )
+        if (dst0 != dst1)
         {
-            T t1 = castOp((row1[x] + row2[x])*4);
-            T t0 = castOp(row0[x] + row1[x]*6 + row2[x]);
-            dst1[x] = t1; dst0[x] = t0;
+            x = PyrUpVecV<WT, T>(rows, dsts, dsize.width);
+            for( ; x < dsize.width; x++ )
+            {
+                T t1 = castOp((row1[x] + row2[x])*4);
+                T t0 = castOp(row0[x] + row1[x]*6 + row2[x]);
+                dst1[x] = t1; dst0[x] = t0;
+            }
         }
+        else
+        {
+            x = PyrUpVecVOneRow<WT, T>(rows, dst0, dsize.width);
+            for( ; x < dsize.width; x++ )
+            {
+                T t0 = castOp(row0[x] + row1[x]*6 + row2[x]);
+                dst0[x] = t0;
+            }
+        }
+
     }
 
     if (dsize.height > ssize.height*2)
@@ -1035,7 +1207,7 @@ static bool ocl_pyrUp( InputArray _src, OutputArray _dst, const Size& _dsz, int 
     UMat dst = _dst.getUMat();
 
     int float_depth = depth == CV_64F ? CV_64F : CV_32F;
-    const int local_size = 16;
+    const int local_size = channels == 1 ? 16 : 8;
     char cvt[2][50];
     String buildOptions = format(
             "-D T=%s -D FT=%s -D convertToT=%s -D convertToFT=%s%s "
@@ -1049,22 +1221,17 @@ static bool ocl_pyrUp( InputArray _src, OutputArray _dst, const Size& _dsz, int 
     size_t globalThreads[2] = { (size_t)dst.cols, (size_t)dst.rows };
     size_t localThreads[2] = { (size_t)local_size, (size_t)local_size };
     ocl::Kernel k;
-    if (ocl::Device::getDefault().isIntel() && channels == 1)
+    if (type == CV_8UC1 && src.cols % 2 == 0)
     {
-        if (type == CV_8UC1 && src.cols % 2 == 0)
-        {
-            buildOptions.clear();
-            k.create("pyrUp_cols2", ocl::imgproc::pyramid_up_oclsrc, buildOptions);
-            globalThreads[0] = dst.cols/4; globalThreads[1] = dst.rows/2;
-        }
-        else
-        {
-            k.create("pyrUp_unrolled", ocl::imgproc::pyr_up_oclsrc, buildOptions);
-            globalThreads[0] = dst.cols/2; globalThreads[1] = dst.rows/2;
-        }
+        buildOptions.clear();
+        k.create("pyrUp_cols2", ocl::imgproc::pyramid_up_oclsrc, buildOptions);
+        globalThreads[0] = dst.cols/4; globalThreads[1] = dst.rows/2;
     }
     else
-        k.create("pyrUp", ocl::imgproc::pyr_up_oclsrc, buildOptions);
+    {
+        k.create("pyrUp_unrolled", ocl::imgproc::pyr_up_oclsrc, buildOptions);
+        globalThreads[0] = dst.cols/2; globalThreads[1] = dst.rows/2;
+    }
 
     if (k.empty())
         return false;

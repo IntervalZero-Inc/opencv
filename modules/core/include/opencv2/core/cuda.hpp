@@ -126,7 +126,7 @@ public:
     GpuMat(int rows, int cols, int type, Allocator* allocator = defaultAllocator());
     GpuMat(Size size, int type, Allocator* allocator = defaultAllocator());
 
-    //! constucts GpuMat and fills it with the specified value _s
+    //! constructs GpuMat and fills it with the specified value _s
     GpuMat(int rows, int cols, int type, Scalar s, Allocator* allocator = defaultAllocator());
     GpuMat(Size size, int type, Scalar s, Allocator* allocator = defaultAllocator());
 
@@ -488,8 +488,16 @@ public:
     //! Allocates a new GpuMat of given size and type.
     GpuMat getBuffer(int rows, int cols, int type);
 
+// WARNING: unreachable code using Ninja
+#if defined _MSC_VER && _MSC_VER >= 1920
+#pragma warning(push)
+#pragma warning(disable: 4702)
+#endif
     //! Allocates a new GpuMat of given size and type.
     GpuMat getBuffer(Size size, int type) { return getBuffer(size.height, size.width, type); }
+#if defined _MSC_VER && _MSC_VER >= 1920
+#pragma warning(pop)
+#endif
 
     //! Returns the allocator associated with the stream.
     Ptr<GpuMat::Allocator> getAllocator() const { return allocator_; }

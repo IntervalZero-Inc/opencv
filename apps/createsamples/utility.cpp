@@ -70,7 +70,7 @@ using namespace cv;
 
 static int icvMkDir( const char* filename )
 {
-    char path[PATH_MAX];
+    char path[PATH_MAX+1];
     char* p;
     int pos;
 
@@ -83,7 +83,8 @@ static int icvMkDir( const char* filename )
     mode = 0755;
 #endif /* _WIN32 */
 
-    strcpy( path, filename );
+    path[0] = '\0';
+    strncat( path, filename, PATH_MAX );
 
     p = path;
     for( ; ; )
@@ -895,7 +896,7 @@ void icvGetNextFromBackgroundData( CvBackgroundData* data,
  * #pragma omp parallel
  * {
  *     ...
- *     icvGetBackgourndImage( cvbgdata, cvbgreader, img );
+ *     icvGetBackgroundImage( cvbgdata, cvbgreader, img );
  *     ...
  * }
  * ...
@@ -990,7 +991,7 @@ static int icvInitBackgroundReaders( const char* filename, Size winsize )
 /*
  * icvDestroyBackgroundReaders
  *
- * Finish backgournd reading process
+ * Finish background reading process
  */
 static
 void icvDestroyBackgroundReaders()
@@ -1078,8 +1079,8 @@ void cvCreateTrainingSamples( const char* filename,
                 icvPlaceDistortedSample( sample, inverse, maxintensitydev,
                     maxxangle, maxyangle, maxzangle,
                     0   /* nonzero means placing image without cut offs */,
-                    0.0 /* nozero adds random shifting                  */,
-                    0.0 /* nozero adds random scaling                   */,
+                    0.0 /* nonzero adds random shifting                  */,
+                    0.0 /* nonzero adds random scaling                   */,
                     &data );
 
                 if( showsamples )

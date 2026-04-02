@@ -154,7 +154,7 @@ void CV_FeatureDetectorTest::compareKeypointSets( const vector<KeyPoint>& validK
             }
         }
 
-        assert( minDist >= 0 );
+        CV_Assert( minDist >= 0 );
         if( !isSimilarKeypoints( validKeypoints[v], calcKeypoints[nearestIdx] ) )
             badPointCount++;
     }
@@ -171,7 +171,7 @@ void CV_FeatureDetectorTest::compareKeypointSets( const vector<KeyPoint>& validK
 
 void CV_FeatureDetectorTest::regressionTest()
 {
-    assert( !fdetector.empty() );
+    CV_Assert( !fdetector.empty() );
     string imgFilename = string(ts->get_data_path()) + FEATURES2D_DIR + "/" + IMAGE_FILENAME;
     string resFilename = string(ts->get_data_path()) + DETECTOR_DIR + "/" + string(name) + ".xml.gz";
 
@@ -244,6 +244,12 @@ void CV_FeatureDetectorTest::run( int /*start_from*/ )
 /****************************************************************************************\
 *                                Tests registrations                                     *
 \****************************************************************************************/
+
+TEST( Features2d_Detector_SIFT, regression )
+{
+    CV_FeatureDetectorTest test( "detector-sift", SIFT::create() );
+    test.safe_run();
+}
 
 TEST( Features2d_Detector_BRISK, regression )
 {

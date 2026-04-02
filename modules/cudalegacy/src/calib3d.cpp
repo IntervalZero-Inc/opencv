@@ -181,7 +181,7 @@ namespace
                    image_subset(0, i) = image->at<Point2f>(subset_indices[i]);
                 }
 
-                solvePnP(object_subset, image_subset, *camera_mat, *dist_coef, rot_vec, transl_vec);
+                solvePnP(object_subset, image_subset, *camera_mat, *dist_coef, rot_vec, transl_vec, false, SOLVEPNP_EPNP);
 
                 // Remember translation vector
                 Mat transl_vec_ = transl_vectors.colRange(iter * 3, (iter + 1) * 3);
@@ -283,7 +283,7 @@ void cv::cuda::solvePnPRansac(const Mat& object, const Mat& image, const Mat& ca
             p_transf.z = rot[6] * p.x + rot[7] * p.y + rot[8] * p.z + transl[2];
             p_proj.x = p_transf.x / p_transf.z;
             p_proj.y = p_transf.y / p_transf.z;
-            if (norm(p_proj - image_normalized.at<Point2f>(0, i)) < max_dist)
+            if (norm(p_proj - image_normalized.at<Point2f>(i)) < max_dist)
                 inliers->push_back(i);
         }
     }

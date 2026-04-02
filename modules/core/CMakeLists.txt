@@ -6,7 +6,7 @@ ocv_add_dispatched_file(arithm SSE2 SSE4_1 AVX2 VSX3)
 ocv_add_dispatched_file(convert SSE2 AVX2 VSX3)
 ocv_add_dispatched_file(convert_scale SSE2 AVX2)
 ocv_add_dispatched_file(count_non_zero SSE2 AVX2)
-ocv_add_dispatched_file(matmul SSE2 AVX2)
+ocv_add_dispatched_file(matmul SSE2 SSE4_1 AVX2 AVX512_SKX NEON_DOTPROD)
 ocv_add_dispatched_file(mean SSE2 AVX2)
 ocv_add_dispatched_file(merge SSE2 AVX2)
 ocv_add_dispatched_file(split SSE2 AVX2)
@@ -23,7 +23,7 @@ ocv_add_module(core
 
 set(extra_libs "")
 
-if(WINRT AND CMAKE_SYSTEM_NAME MATCHES WindowsStore AND CMAKE_SYSTEM_VERSION MATCHES "8.0")
+if(WINRT AND WINDOWS_STORE AND CMAKE_SYSTEM_VERSION MATCHES "8.0")
   list(APPEND extra_libs ole32.lib)
 endif()
 
@@ -39,7 +39,7 @@ if(HAVE_CUDA)
   ocv_warnings_disable(CMAKE_CXX_FLAGS -Wundef -Wenum-compare -Wunused-function -Wshadow)
 endif()
 
-if(CV_TRACE AND HAVE_ITT AND BUILD_ITT)
+if(CV_TRACE AND HAVE_ITT)
   add_definitions(-DOPENCV_WITH_ITT=1)
 endif()
 
@@ -78,14 +78,44 @@ if(HAVE_MEMALIGN)
   ocv_append_source_file_compile_definitions(${CMAKE_CURRENT_SOURCE_DIR}/src/alloc.cpp "HAVE_MEMALIGN=1")
 endif()
 
+option(OPENCV_ENABLE_ALLOCATOR_STATS "Enable Allocator metrics" ON)
+
+if(NOT OPENCV_ENABLE_ALLOCATOR_STATS)
+  add_definitions(-DOPENCV_DISABLE_ALLOCATOR_STATS=1)
+elseif(HAVE_CXX11 OR DEFINED OPENCV_ALLOCATOR_STATS_COUNTER_TYPE)
+  if(NOT DEFINED OPENCV_ALLOCATOR_STATS_COUNTER_TYPE)
+    if(HAVE_ATOMIC_LONG_LONG AND OPENCV_ENABLE_ATOMIC_LONG_LONG)
+      if(MINGW)
+        # command-line generation issue due to space in value, int/int64_t should be used instead
+        # https://github.com/opencv/opencv/issues/16990
+        message(STATUS "Consider adding OPENCV_ALLOCATOR_STATS_COUNTER_TYPE=int/int64_t according to your build configuration")
+      else()
+        set(OPENCV_ALLOCATOR_STATS_COUNTER_TYPE "long long")
+      endif()
+    else()
+      set(OPENCV_ALLOCATOR_STATS_COUNTER_TYPE "int")
+    endif()
+  endif()
+  if(DEFINED OPENCV_ALLOCATOR_STATS_COUNTER_TYPE)
+    message(STATUS "Allocator metrics storage type: '${OPENCV_ALLOCATOR_STATS_COUNTER_TYPE}'")
+    add_definitions("-DOPENCV_ALLOCATOR_STATS_COUNTER_TYPE=${OPENCV_ALLOCATOR_STATS_COUNTER_TYPE}")
+  endif()
+endif()
+
+
 ocv_create_module(${extra_libs})
 
-ocv_target_link_libraries(${the_module} LINK_PRIVATE
+ocv_target_link_libraries(${the_module} PRIVATE
     "${ZLIB_LIBRARIES}" "${OPENCL_LIBRARIES}" "${VA_LIBRARIES}"
+    "${OPENGL_LIBRARIES}"
     "${LAPACK_LIBRARIES}" "${CPUFEATURES_LIBRARIES}" "${HALIDE_LIBRARIES}"
     "${ITT_LIBRARIES}"
     "${OPENCV_HAL_LINKER_LIBS}"
 )
+
+if(OPENCV_CORE_EXCLUDE_C_API)
+  ocv_target_compile_definitions(${the_module} PRIVATE "OPENCV_EXCLUDE_C_API=1")
+endif()
 
 ocv_add_accuracy_tests()
 ocv_add_perf_tests()

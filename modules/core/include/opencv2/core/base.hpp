@@ -297,37 +297,23 @@ It is possible to alternate error processing by using redirectError().
  */
 CV_EXPORTS void error(int _code, const String& _err, const char* _func, const char* _file, int _line);
 
-#ifdef __GNUC__
-# if defined __clang__ || defined __APPLE__
-#   pragma GCC diagnostic push
-#   pragma GCC diagnostic ignored "-Winvalid-noreturn"
-# endif
-#endif
-
 /** same as cv::error, but does not return */
 CV_INLINE CV_NORETURN void errorNoReturn(int _code, const String& _err, const char* _func, const char* _file, int _line)
 {
     error(_code, _err, _func, _file, _line);
-#ifdef __GNUC__
-# if !defined __clang__ && !defined __APPLE__
+#if defined(__GNUC__) || defined(__clang__)
     // this suppresses this warning: "noreturn" function does return [enabled by default]
     __builtin_trap();
     // or use infinite loop: for (;;) {}
-# endif
 #endif
 }
-#ifdef __GNUC__
-# if defined __clang__ || defined __APPLE__
-#   pragma GCC diagnostic pop
-# endif
-#endif
 
 #ifdef CV_STATIC_ANALYSIS
 
 // In practice, some macro are not processed correctly (noreturn is not detected).
 // We need to use simplified definition for them.
-#define CV_Error(...) do { abort(); } while (0)
-#define CV_Error_( code, args ) do { cv::format args; abort(); } while (0)
+#define CV_Error(code, msg) do { (void)(code); (void)(msg); abort(); } while (0)
+#define CV_Error_(code, args) do { (void)(code); (void)(cv::format args); abort(); } while (0)
 #define CV_Assert( expr ) do { if (!(expr)) abort(); } while (0)
 #define CV_ErrorNoReturn CV_Error
 #define CV_ErrorNoReturn_ CV_Error_
@@ -586,6 +572,21 @@ _AccTp normInf(const _Tp* a, const _Tp* b, int n)
  @param val A function argument.
  */
 CV_EXPORTS_W float cubeRoot(float val);
+
+/** @overload
+
+cubeRoot with argument of `double` type calls `std::cbrt(double)` (C++11) or falls back on `pow()` for C++98 compilation mode.
+*/
+static inline
+double cubeRoot(double val)
+{
+#ifdef CV_CXX11
+    return std::cbrt(val);
+#else
+    double v = pow(abs(val), 1/3.);  // pow doesn't support negative inputs with fractional exponents
+    return val >= 0 ? v : -v;
+#endif
+}
 
 /** @brief Calculates the angle of a 2D vector in degrees.
 

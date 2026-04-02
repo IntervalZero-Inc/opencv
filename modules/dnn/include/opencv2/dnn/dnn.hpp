@@ -47,9 +47,9 @@
 #include "opencv2/core/async.hpp"
 
 #if !defined CV_DOXYGEN && !defined CV_STATIC_ANALYSIS && !defined CV_DNN_DONT_ADD_EXPERIMENTAL_NS
-#define CV__DNN_EXPERIMENTAL_NS_BEGIN namespace experimental_dnn_34_v13 {
+#define CV__DNN_EXPERIMENTAL_NS_BEGIN namespace experimental_dnn_34_v26 {
 #define CV__DNN_EXPERIMENTAL_NS_END }
-namespace cv { namespace dnn { namespace experimental_dnn_34_v13 { } using namespace experimental_dnn_34_v13; }}
+namespace cv { namespace dnn { namespace experimental_dnn_34_v26 { } using namespace experimental_dnn_34_v26; }}
 #else
 #define CV__DNN_EXPERIMENTAL_NS_BEGIN
 #define CV__DNN_EXPERIMENTAL_NS_END
@@ -74,10 +74,18 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
         //! DNN_BACKEND_DEFAULT equals to DNN_BACKEND_INFERENCE_ENGINE if
         //! OpenCV is built with Intel's Inference Engine library or
         //! DNN_BACKEND_OPENCV otherwise.
-        DNN_BACKEND_DEFAULT,
+        DNN_BACKEND_DEFAULT = 0,
         DNN_BACKEND_HALIDE,
-        DNN_BACKEND_INFERENCE_ENGINE,  //!< Intel's Inference Engine computational backend.
-        DNN_BACKEND_OPENCV
+        DNN_BACKEND_INFERENCE_ENGINE,            //!< Intel's Inference Engine computational backend
+                                                 //!< @sa setInferenceEngineBackendType
+        DNN_BACKEND_OPENCV,
+        // OpenCV 4.x: DNN_BACKEND_VKCOM,
+        // OpenCV 4.x: DNN_BACKEND_CUDA,
+
+#ifdef __OPENCV_BUILD
+        DNN_BACKEND_INFERENCE_ENGINE_NGRAPH = 1000000,     // internal - use DNN_BACKEND_INFERENCE_ENGINE + setInferenceEngineBackendType()
+        DNN_BACKEND_INFERENCE_ENGINE_NN_BUILDER_2019,      // internal - use DNN_BACKEND_INFERENCE_ENGINE + setInferenceEngineBackendType()
+#endif
     };
 
     /**
@@ -86,7 +94,7 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
      */
     enum Target
     {
-        DNN_TARGET_CPU,
+        DNN_TARGET_CPU = 0,
         DNN_TARGET_OPENCL,
         DNN_TARGET_OPENCL_FP16,
         DNN_TARGET_MYRIAD,
@@ -94,7 +102,7 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
     };
 
     CV_EXPORTS std::vector< std::pair<Backend, Target> > getAvailableBackends();
-    CV_EXPORTS std::vector<Target> getAvailableTargets(Backend be);
+    CV_EXPORTS_W std::vector<Target> getAvailableTargets(dnn::Backend be);
 
     /** @brief This class provides all data needed to initialize layer.
      *
@@ -117,7 +125,7 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
     class BackendNode
     {
     public:
-        BackendNode(int backendId);
+        explicit BackendNode(int backendId);
 
         virtual ~BackendNode(); //!< Virtual destructor to make polymorphism.
 
@@ -251,18 +259,18 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
          * Each layer input and output can be labeled to easily identify them using "%<layer_name%>[.output_name]" notation.
          * This method maps label of input blob to its index into input vector.
          */
-        virtual int inputNameToIndex(String inputName);
+        virtual int inputNameToIndex(String inputName);  // FIXIT const
         /** @brief Returns index of output blob in output array.
          *  @see inputNameToIndex()
          */
-        CV_WRAP virtual int outputNameToIndex(const String& outputName);
+        CV_WRAP virtual int outputNameToIndex(const String& outputName);  // FIXIT const
 
         /**
          * @brief Ask layer if it support specific backend for doing computations.
          * @param[in] backendId computation backend identifier.
          * @see Backend
          */
-        virtual bool supportBackend(int backendId);
+        virtual bool supportBackend(int backendId);  // FIXIT const
 
         /**
          * @brief Returns Halide backend node.
@@ -276,7 +284,7 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
          */
         virtual Ptr<BackendNode> initHalide(const std::vector<Ptr<BackendWrapper> > &inputs);
 
-        virtual Ptr<BackendNode> initInfEngine(const std::vector<Ptr<BackendWrapper> > &inputs);
+        virtual Ptr<BackendNode> initNgraph(const std::vector<Ptr<BackendWrapper> > &inputs, const std::vector<Ptr<BackendNode> >& nodes);
 
        /**
         * @brief Automatic Halide scheduling based on layer hyper-parameters.
@@ -344,8 +352,11 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
                                      const int requiredOutputs,
                                      std::vector<MatShape> &outputs,
                                      std::vector<MatShape> &internals) const;
+
         virtual int64 getFLOPS(const std::vector<MatShape> &inputs,
                                const std::vector<MatShape> &outputs) const {CV_UNUSED(inputs); CV_UNUSED(outputs); return 0;}
+
+        virtual bool updateMemoryShapes(const std::vector<MatShape> &inputs);
 
         CV_PROP String name; //!< Name of the layer instance, can be used for logging or other internal purposes.
         CV_PROP String type; //!< Type name which was used for creating layer by layer factory.
@@ -374,7 +385,7 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
         CV_WRAP Net();  //!< Default constructor.
         CV_WRAP ~Net(); //!< Destructor frees the net only if there aren't references to the net anymore.
 
-        /** @brief Create a network from Intel's Model Optimizer intermediate representation.
+        /** @brief Create a network from Intel's Model Optimizer intermediate representation (IR).
          *  @param[in] xml XML configuration file with network's topology.
          *  @param[in] bin Binary file with trained weights.
          *  Networks imported from Intel's Model Optimizer are launched in Intel's Inference Engine
@@ -382,12 +393,31 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
          */
         CV_WRAP static Net readFromModelOptimizer(const String& xml, const String& bin);
 
+        /** @brief Create a network from Intel's Model Optimizer in-memory buffers with intermediate representation (IR).
+         *  @param[in] bufferModelConfig buffer with model's configuration.
+         *  @param[in] bufferWeights buffer with model's trained weights.
+         *  @returns Net object.
+         */
+        CV_WRAP static
+        Net readFromModelOptimizer(const std::vector<uchar>& bufferModelConfig, const std::vector<uchar>& bufferWeights);
+
+        /** @brief Create a network from Intel's Model Optimizer in-memory buffers with intermediate representation (IR).
+         *  @param[in] bufferModelConfigPtr buffer pointer of model's configuration.
+         *  @param[in] bufferModelConfigSize buffer size of model's configuration.
+         *  @param[in] bufferWeightsPtr buffer pointer of model's trained weights.
+         *  @param[in] bufferWeightsSize buffer size of model's trained weights.
+         *  @returns Net object.
+         */
+        static
+        Net readFromModelOptimizer(const uchar* bufferModelConfigPtr, size_t bufferModelConfigSize,
+                                            const uchar* bufferWeightsPtr, size_t bufferWeightsSize);
+
         /** Returns true if there are no layers in the network. */
         CV_WRAP bool empty() const;
 
         /** @brief Dump net to String
          *  @returns String with structure, hyperparameters, backend, target and fusion
-         *  To see correct backend, target and fusion run after forward().
+         *  Call method after setInput(). To see correct backend, target and fusion run after forward().
          */
         CV_WRAP String dump();
         /** @brief Dump net structure, hyperparameters, backend, target and fusion to dot file
@@ -410,25 +440,36 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
         /** @brief Converts string name of the layer to the integer identifier.
          *  @returns id of the layer, or -1 if the layer wasn't found.
          */
-        CV_WRAP int getLayerId(const String &layer);
+        CV_WRAP int getLayerId(const String &layer) const;
 
         CV_WRAP std::vector<String> getLayerNames() const;
 
-        /** @brief Container for strings and integers. */
+        /** @brief Container for strings and integers.
+         *
+         * @deprecated Use getLayerId() with int result.
+         */
         typedef DictValue LayerId;
 
         /** @brief Returns pointer to layer with specified id or name which the network use. */
-        CV_WRAP Ptr<Layer> getLayer(LayerId layerId);
+        CV_WRAP Ptr<Layer> getLayer(int layerId) const;
+        /** @overload
+         *  @deprecated Use int getLayerId(const String &layer)
+         */
+        CV_WRAP inline Ptr<Layer> getLayer(const String& layerName) const { return getLayer(getLayerId(layerName)); }
+        /** @overload
+         *  @deprecated to be removed
+         */
+        CV_WRAP Ptr<Layer> getLayer(const LayerId& layerId) const;
 
         /** @brief Returns pointers to input layers of specific layer. */
-        std::vector<Ptr<Layer> > getLayerInputs(LayerId layerId); // FIXIT: CV_WRAP
+        std::vector<Ptr<Layer> > getLayerInputs(int layerId) const; // FIXIT: CV_WRAP
 
         /** @brief Connects output of the first layer to input of the second layer.
          *  @param outPin descriptor of the first layer output.
          *  @param inpPin descriptor of the second layer input.
          *
          * Descriptors have the following template <DFN>&lt;layer_name&gt;[.input_number]</DFN>:
-         * - the first part of the template <DFN>layer_name</DFN> is sting name of the added layer.
+         * - the first part of the template <DFN>layer_name</DFN> is string name of the added layer.
          *   If this part is empty then the network input pseudo layer will be used;
          * - the second optional part of the template <DFN>input_number</DFN>
          *   is either number of the layer input, either label one.
@@ -446,6 +487,18 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
          */
         void connect(int outLayerId, int outNum, int inpLayerId, int inpNum);
 
+        /** @brief Registers network output with name
+         *
+         *  Function may create additional 'Identity' layer.
+         *
+         *  @param outputName identifier of the output
+         *  @param layerId identifier of the second layer
+         *  @param outputPort number of the second layer input
+         *
+         *  @returns index of bound layer (the same as layerId or newly created)
+         */
+        int registerOutput(const std::string& outputName, int layerId, int outputPort);
+
         /** @brief Sets outputs names of the network input pseudo layer.
          *
          * Each net always has special own the network input pseudo layer with id=0.
@@ -454,6 +507,10 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
          * As any other layer, this layer can label its outputs and this function provides an easy way to do this.
          */
         CV_WRAP void setInputsNames(const std::vector<String> &inputBlobNames);
+
+        /** @brief Specify shape of network input.
+         */
+        CV_WRAP void setInputShape(const String &inputName, const MatShape& shape);
 
         /** @brief Runs forward pass to compute output of layer with name @p outputName.
          *  @param outputName name for layer which output is needed to get
@@ -551,20 +608,26 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
          *  @note If shape of the new blob differs from the previous shape,
          *  then the following forward pass may fail.
         */
-        CV_WRAP void setParam(LayerId layer, int numParam, const Mat &blob);
+        CV_WRAP void setParam(int layer, int numParam, const Mat &blob);
+        CV_WRAP inline void setParam(const String& layerName, int numParam, const Mat &blob) { return setParam(getLayerId(layerName), numParam, blob); }
 
         /** @brief Returns parameter blob of the layer.
          *  @param layer name or id of the layer.
          *  @param numParam index of the layer parameter in the Layer::blobs array.
          *  @see Layer::blobs
          */
-        CV_WRAP Mat getParam(LayerId layer, int numParam = 0);
+        CV_WRAP Mat getParam(int layer, int numParam = 0) const;
+        CV_WRAP inline Mat getParam(const String& layerName, int numParam = 0) const { return getParam(getLayerId(layerName), numParam); }
 
         /** @brief Returns indexes of layers with unconnected outputs.
+         *
+         * FIXIT: Rework API to registerOutput() approach, deprecate this call
          */
         CV_WRAP std::vector<int> getUnconnectedOutLayers() const;
 
         /** @brief Returns names of layers with unconnected outputs.
+         *
+         * FIXIT: Rework API to registerOutput() approach, deprecate this call
          */
         CV_WRAP std::vector<String> getUnconnectedOutLayersNames() const;
 
@@ -676,9 +739,11 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
         CV_WRAP void enableFusion(bool fusion);
 
         /** @brief Returns overall time for inference and timings (in ticks) for layers.
+         *
          * Indexes in returned vector correspond to layers ids. Some layers can be fused with others,
-         * in this case zero ticks count will be return for that skipped layers.
-         * @param timings vector for tick timings for all layers.
+         * in this case zero ticks count will be return for that skipped layers. Supported by DNN_BACKEND_OPENCV on DNN_TARGET_CPU only.
+         *
+         * @param[out] timings vector for tick timings for all layers.
          * @return overall ticks for model inference.
          */
         CV_WRAP int64 getPerfProfile(CV_OUT std::vector<double>& timings);
@@ -847,7 +912,31 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
      *  Networks imported from Intel's Model Optimizer are launched in Intel's Inference Engine
      *  backend.
      */
-    CV_EXPORTS_W Net readNetFromModelOptimizer(const String &xml, const String &bin);
+    CV_EXPORTS_W
+    Net readNetFromModelOptimizer(const String &xml, const String &bin);
+
+    /** @brief Load a network from Intel's Model Optimizer intermediate representation.
+     *  @param[in] bufferModelConfig Buffer contains XML configuration with network's topology.
+     *  @param[in] bufferWeights Buffer contains binary data with trained weights.
+     *  @returns Net object.
+     *  Networks imported from Intel's Model Optimizer are launched in Intel's Inference Engine
+     *  backend.
+     */
+    CV_EXPORTS_W
+    Net readNetFromModelOptimizer(const std::vector<uchar>& bufferModelConfig, const std::vector<uchar>& bufferWeights);
+
+    /** @brief Load a network from Intel's Model Optimizer intermediate representation.
+     *  @param[in] bufferModelConfigPtr Pointer to buffer which contains XML configuration with network's topology.
+     *  @param[in] bufferModelConfigSize Binary size of XML configuration data.
+     *  @param[in] bufferWeightsPtr Pointer to buffer which contains binary data with trained weights.
+     *  @param[in] bufferWeightsSize Binary size of trained weights data.
+     *  @returns Net object.
+     *  Networks imported from Intel's Model Optimizer are launched in Intel's Inference Engine
+     *  backend.
+     */
+    CV_EXPORTS
+    Net readNetFromModelOptimizer(const uchar* bufferModelConfigPtr, size_t bufferModelConfigSize,
+                                           const uchar* bufferWeightsPtr, size_t bufferWeightsSize);
 
     /** @brief Reads a network model <a href="https://onnx.ai/">ONNX</a>.
      *  @param onnxFile path to the .onnx file with text description of the network architecture.
@@ -981,7 +1070,7 @@ CV__DNN_EXPERIMENTAL_NS_BEGIN
      * @param eta a coefficient in adaptive threshold formula: \f$nms\_threshold_{i+1}=eta\cdot nms\_threshold_i\f$.
      * @param top_k if `>0`, keep at most @p top_k picked indices.
      */
-    CV_EXPORTS_W void NMSBoxes(const std::vector<Rect>& bboxes, const std::vector<float>& scores,
+    CV_EXPORTS void NMSBoxes(const std::vector<Rect>& bboxes, const std::vector<float>& scores,
                                const float score_threshold, const float nms_threshold,
                                CV_OUT std::vector<int>& indices,
                                const float eta = 1.f, const int top_k = 0);

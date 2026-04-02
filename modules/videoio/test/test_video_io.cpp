@@ -83,6 +83,8 @@ public:
     {
         if (!isBackendAvailable(apiPref, cv::videoio_registry::getStreamBackends()))
             throw SkipTestException(cv::String("Backend is not available/disabled: ") + cv::videoio_registry::getBackendName(apiPref));
+        if (cvtest::skipUnstableTests && apiPref == CAP_MSMF && (ext == "h264" || ext == "h265" || ext == "mpg"))
+            throw SkipTestException("Unstable MSMF test");
         VideoCapture cap;
         ASSERT_NO_THROW(cap.open(video_file, apiPref));
         if (!cap.isOpened())
@@ -115,6 +117,8 @@ public:
             for (int k = 0; k < n_frames; ++k)
             {
                 checkFrameRead(k, cap);
+                if (::testing::Test::HasFailure() && k % 10 == 0)
+                    break;
             }
         }
         bool canSeek = false;
@@ -134,6 +138,8 @@ public:
             for (int k = 0; k < n_frames; k += 20)
             {
                 checkFrameSeek(k, cap);
+                if (::testing::Test::HasFailure() && k % 10 == 0)
+                    break;
             }
         }
 
@@ -146,6 +152,8 @@ public:
             for (int k = 0; k < 10; ++k)
             {
                 checkFrameSeek(cvtest::TS::ptr()->get_rng().uniform(0, n_frames), cap);
+                if (::testing::Test::HasFailure() && k % 10 == 0)
+                    break;
             }
         }
     }
@@ -168,6 +176,8 @@ public:
     {
         if (!isBackendAvailable(apiPref, cv::videoio_registry::getStreamBackends()))
             throw SkipTestException(cv::String("Backend is not available/disabled: ") + cv::videoio_registry::getBackendName(apiPref));
+        if (cvtest::skipUnstableTests && apiPref == CAP_MSMF && (ext == "h264" || ext == "h265" || ext == "mpg"))
+            throw SkipTestException("Unstable MSMF test");
         VideoCapture cap;
         EXPECT_NO_THROW(cap.open(video_file, apiPref));
         if (!cap.isOpened())
@@ -211,6 +221,8 @@ public:
             EXPECT_EQ(bunny_param.getWidth(), frame.cols);
             EXPECT_EQ(bunny_param.getHeight(), frame.rows);
             count_actual += 1;
+            if (::testing::Test::HasFailure() && count_actual % 10 == 0)
+                break;
         }
         if (count_prop > 0)
         {
@@ -218,6 +230,41 @@ public:
         }
         else
             std::cout << "Frames counter is not available. Actual frames: " << count_actual << ". SKIP check." << std::endl;
+    }
+
+    void doTimestampTest()
+    {
+        if (!isBackendAvailable(apiPref, cv::videoio_registry::getStreamBackends()))
+            throw SkipTestException(cv::String("Backend is not available/disabled: ") + cv::videoio_registry::getBackendName(apiPref));
+
+        // GStreamer: https://github.com/opencv/opencv/issues/19025
+        if (apiPref == CAP_GSTREAMER)
+            throw SkipTestException(cv::String("Backend ") +  cv::videoio_registry::getBackendName(apiPref) +
+                    cv::String(" does not return reliable values for CAP_PROP_POS_MSEC property"));
+
+        if (((apiPref == CAP_FFMPEG) && ((ext == "h264") || (ext == "h265"))))
+            throw SkipTestException(cv::String("Backend ") +  cv::videoio_registry::getBackendName(apiPref) +
+                    cv::String(" does not support CAP_PROP_POS_MSEC option"));
+
+        VideoCapture cap;
+        EXPECT_NO_THROW(cap.open(video_file, apiPref));
+        if (!cap.isOpened())
+            throw SkipTestException(cv::String("Backend ") +  cv::videoio_registry::getBackendName(apiPref) +
+                    cv::String(" can't open the video: ")  + video_file);
+
+        Mat img;
+        for(int i = 0; i < 10; i++)
+        {
+            double timestamp = 0;
+            ASSERT_NO_THROW(cap >> img);
+            EXPECT_NO_THROW(timestamp = cap.get(CAP_PROP_POS_MSEC));
+            if (cvtest::debugLevel > 0)
+                std::cout << "i = " << i << ": timestamp = " << timestamp << std::endl;
+            const double frame_period = 1000.f/bunny_param.getFps();
+            // NOTE: eps == frame_period, because videoCapture returns frame beginning timestamp or frame end
+            // timestamp depending on codec and back-end. So the first frame has timestamp 0 or frame_period.
+            EXPECT_NEAR(timestamp, i*frame_period, frame_period) << "i=" << i;
+        }
     }
 };
 
@@ -262,6 +309,8 @@ public:
         {
             generateFrame(i, frame_count, img);
             EXPECT_NO_THROW(writer << img);
+            if (::testing::Test::HasFailure() && i % 10 == 0)
+                break;
         }
         EXPECT_NO_THROW(writer.release());
     }
@@ -352,6 +401,8 @@ static const string bunny_params[] = {
 TEST_P(Videoio_Bunny, read_position) { doTest(); }
 
 TEST_P(Videoio_Bunny, frame_count) { doFrameCountTest(); }
+
+TEST_P(Videoio_Bunny, frame_timestamp) { doTimestampTest(); }
 
 INSTANTIATE_TEST_CASE_P(videoio, Videoio_Bunny,
                           testing::Combine(
@@ -526,5 +577,63 @@ static vector<Ext_Fourcc_API> generate_Ext_Fourcc_API()
 }
 
 INSTANTIATE_TEST_CASE_P(videoio, Videoio_Writer, testing::ValuesIn(generate_Ext_Fourcc_API()));
+
+typedef Videoio_Writer Videoio_Writer_bad_fourcc;
+
+TEST_P(Videoio_Writer_bad_fourcc, nocrash)
+{
+    if (!isBackendAvailable(apiPref, cv::videoio_registry::getStreamBackends()))
+        throw SkipTestException(cv::String("Backend is not available/disabled: ") + cv::videoio_registry::getBackendName(apiPref));
+
+    VideoWriter writer;
+    EXPECT_NO_THROW(writer.open(video_file, apiPref, fourcc, fps, frame_size, true));
+    ASSERT_FALSE(writer.isOpened());
+    EXPECT_NO_THROW(writer.release());
+}
+
+static vector<Ext_Fourcc_API> generate_Ext_Fourcc_API_nocrash()
+{
+    static const Ext_Fourcc_API params[] = {
+#ifdef HAVE_MSMF_DISABLED  // MSMF opens writer stream
+    {"wmv", "aaaa", CAP_MSMF},
+    {"mov", "aaaa", CAP_MSMF},
+#endif
+
+#ifdef HAVE_QUICKTIME
+    {"mov", "aaaa", CAP_QT},
+    {"avi", "aaaa", CAP_QT},
+    {"mkv", "aaaa", CAP_QT},
+#endif
+
+#ifdef HAVE_AVFOUNDATION
+   {"mov", "aaaa", CAP_AVFOUNDATION},
+   {"mp4", "aaaa", CAP_AVFOUNDATION},
+   {"m4v", "aaaa", CAP_AVFOUNDATION},
+#endif
+
+#ifdef HAVE_FFMPEG
+    {"avi", "aaaa", CAP_FFMPEG},
+    {"mkv", "aaaa", CAP_FFMPEG},
+#endif
+
+#ifdef HAVE_GSTREAMER
+    {"avi", "aaaa", CAP_GSTREAMER},
+    {"mkv", "aaaa", CAP_GSTREAMER},
+#endif
+    {"avi", "aaaa", CAP_OPENCV_MJPEG},
+};
+
+    const size_t N = sizeof(params)/sizeof(params[0]);
+    vector<Ext_Fourcc_API> result; result.reserve(N);
+    for (size_t i = 0; i < N; i++)
+    {
+        const Ext_Fourcc_API& src = params[i];
+        Ext_Fourcc_API e = { src.ext, src.fourcc, src.api };
+        result.push_back(e);
+    }
+    return result;
+}
+
+INSTANTIATE_TEST_CASE_P(videoio, Videoio_Writer_bad_fourcc, testing::ValuesIn(generate_Ext_Fourcc_API_nocrash()));
 
 } // namespace

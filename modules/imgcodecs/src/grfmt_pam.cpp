@@ -62,7 +62,7 @@ namespace cv {
 #define MAX_PAM_HEADER_IDENITFIER_LENGTH 8
 #define MAX_PAM_HEADER_VALUE_LENGTH 255
 
-/* PAM header fileds */
+/* PAM header fields */
 typedef enum {
     PAM_HEADER_NONE,
     PAM_HEADER_COMMENT,
@@ -470,7 +470,11 @@ bool PAMDecoder::readHeader()
                     selected_fmt = CV_IMWRITE_PAM_FORMAT_GRAYSCALE;
                 else if (m_channels == 3 && m_maxval < 256)
                     selected_fmt = CV_IMWRITE_PAM_FORMAT_RGB;
+                else
+                    CV_Error(Error::StsError, "Can't determine selected_fmt (IMWRITE_PAM_FORMAT_NULL)");
             }
+            CV_CheckDepth(m_sampledepth, m_sampledepth == CV_8U || m_sampledepth == CV_16U, "");
+            CV_Check(m_channels, m_channels >= 1 && m_channels <= 4, "Unsupported number of channels");
             m_type = CV_MAKETYPE(m_sampledepth, m_channels);
             m_offset = m_strm.getPos();
 
@@ -566,6 +570,10 @@ bool PAMDecoder::readData(Mat& img)
                         m_strm.getBytes( src, src_stride );
                         FillColorRow1( data, src, m_width, palette );
                     }
+                }
+                else
+                {
+                    CV_Error(Error::StsError, cv::format("Unsupported value of target_channels: %d", target_channels));
                 }
             } else {
                 for (int y = 0; y < m_height; y++, data += imp_stride)

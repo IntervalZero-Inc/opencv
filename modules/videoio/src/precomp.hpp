@@ -48,6 +48,12 @@
 #include "opencv2/core/private.hpp"
 
 #include <opencv2/core/utils/configuration.private.hpp>
+#include <opencv2/core/utils/logger.defines.hpp>
+#ifdef NDEBUG
+#define CV_LOG_STRIP_LEVEL CV_LOG_LEVEL_DEBUG + 1
+#else
+#define CV_LOG_STRIP_LEVEL CV_LOG_LEVEL_VERBOSE + 1
+#endif
 #include <opencv2/core/utils/logger.hpp>
 
 #include "opencv2/imgcodecs.hpp"
@@ -62,7 +68,6 @@
 #include <string.h>
 #include <limits.h>
 #include <ctype.h>
-#include <assert.h>  // FIXIT remove this
 
 #if defined _WIN32 || defined WINCE
     #if !defined _WIN32_WINNT

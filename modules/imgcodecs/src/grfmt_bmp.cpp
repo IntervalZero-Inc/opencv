@@ -102,7 +102,9 @@ bool  BmpDecoder::readHeader()
             m_width  = m_strm.getDWord();
             m_height = m_strm.getDWord();
             m_bpp    = m_strm.getDWord() >> 16;
-            m_rle_code = (BmpCompression)m_strm.getDWord();
+            int m_rle_code_ = m_strm.getDWord();
+            CV_Assert(m_rle_code_ >= 0 && m_rle_code_ <= BMP_BITFIELDS);
+            m_rle_code = (BmpCompression)m_rle_code_;
             m_strm.skip(12);
             int clrused = m_strm.getDWord();
             m_strm.skip( size - 36 );
@@ -178,7 +180,7 @@ bool  BmpDecoder::readHeader()
         throw;
     }
     // in 32 bit case alpha channel is used - so require CV_8UC4 type
-    m_type = iscolor ? (m_bpp == 32 ? CV_8UC4 : CV_8UC3 ) : CV_8UC1;
+    m_type = iscolor ? ((m_bpp == 32 && m_rle_code != BMP_RGB) ? CV_8UC4 : CV_8UC3 ) : CV_8UC1;
     m_origin = m_height > 0 ? IPL_ORIGIN_BL : IPL_ORIGIN_TL;
     m_height = std::abs(m_height);
 

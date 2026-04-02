@@ -51,7 +51,6 @@ using namespace cv::cuda;
 #ifdef HAVE_OPENCV_XFEATURES2D
 #include "opencv2/xfeatures2d.hpp"
 using xfeatures2d::SURF;
-using xfeatures2d::SIFT;
 #else
 #  if defined(_MSC_VER)
 #    pragma warning(disable:4702)  // unreachable code
@@ -487,14 +486,8 @@ void SurfFeaturesFinder::find(InputArray image, ImageFeatures &features)
 
 SiftFeaturesFinder::SiftFeaturesFinder()
 {
-#ifdef HAVE_OPENCV_XFEATURES2D
     Ptr<SIFT> sift_ = SIFT::create();
-    if( !sift_ )
-        CV_Error( Error::StsNotImplemented, "OpenCV was built without SIFT support" );
     sift = sift_;
-#else
-    CV_Error( Error::StsNotImplemented, "OpenCV was built without SIFT support" );
-#endif
 }
 
 void SiftFeaturesFinder::find(InputArray image, ImageFeatures &features)
@@ -833,7 +826,7 @@ void BestOf2NearestRangeMatcher::operator ()(const std::vector<ImageFeatures> &f
 
     std::vector<std::pair<int,int> > near_pairs;
     for (int i = 0; i < num_images - 1; ++i)
-        for (int j = i + 1; j < std::min(num_images, i + range_width_); ++j)
+        for (int j = i + 1; j < std::min(num_images, i + 1 + range_width_); ++j)
             if (features[i].keypoints.size() > 0 && features[j].keypoints.size() > 0 && mask_(i, j))
                 near_pairs.push_back(std::make_pair(i, j));
 

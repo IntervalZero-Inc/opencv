@@ -157,7 +157,7 @@ static void test_threshold( const Mat& _src, Mat& _dst,
         imaxval = cvRound(maxval);
     }
 
-    assert( depth == CV_8U || depth == CV_16S || depth == CV_16U || depth == CV_32F || depth == CV_64F );
+    CV_Assert( depth == CV_8U || depth == CV_16S || depth == CV_16U || depth == CV_32F || depth == CV_64F );
 
     switch( thresh_type )
     {
@@ -407,7 +407,7 @@ static void test_threshold( const Mat& _src, Mat& _dst,
         }
         break;
     default:
-        assert(0);
+        CV_Assert(0);
     }
 }
 
@@ -432,6 +432,45 @@ BIGDATA_TEST(Imgproc_Threshold, huge)
     cv::threshold(m, m, 127, 255, cv::THRESH_BINARY);
     int nz = cv::countNonZero(m);  // FIXIT 'int' is not enough here (overflow is possible with other inputs)
     ASSERT_EQ((uint64)nz, n / 2);
+}
+
+TEST(Imgproc_Threshold, regression_THRESH_TOZERO_IPP_16085)
+{
+    Size sz(16, 16);
+    Mat input(sz, CV_32F, Scalar::all(2));
+    Mat result;
+    cv::threshold(input, result, 2.0, 0.0, THRESH_TOZERO);
+    EXPECT_EQ(0, cv::norm(result, NORM_INF));
+}
+
+TEST(Imgproc_Threshold, regression_THRESH_TOZERO_IPP_21258)
+{
+    Size sz(16, 16);
+    float val = nextafterf(16.0f, 0.0f);  // 0x417fffff, all bits in mantissa are 1
+    Mat input(sz, CV_32F, Scalar::all(val));
+    Mat result;
+    cv::threshold(input, result, val, 0.0, THRESH_TOZERO);
+    EXPECT_EQ(0, cv::norm(result, NORM_INF));
+}
+
+TEST(Imgproc_Threshold, regression_THRESH_TOZERO_IPP_21258_Min)
+{
+    Size sz(16, 16);
+    float min_val = -std::numeric_limits<float>::max();
+    Mat input(sz, CV_32F, Scalar::all(min_val));
+    Mat result;
+    cv::threshold(input, result, min_val, 0.0, THRESH_TOZERO);
+    EXPECT_EQ(0, cv::norm(result, NORM_INF));
+}
+
+TEST(Imgproc_Threshold, regression_THRESH_TOZERO_IPP_21258_Max)
+{
+    Size sz(16, 16);
+    float max_val = std::numeric_limits<float>::max();
+    Mat input(sz, CV_32F, Scalar::all(max_val));
+    Mat result;
+    cv::threshold(input, result, max_val, 0.0, THRESH_TOZERO);
+    EXPECT_EQ(0, cv::norm(result, NORM_INF));
 }
 
 }} // namespace
